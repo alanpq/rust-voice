@@ -72,7 +72,7 @@ impl Server {
       },
       ClientMessage::Voice { samples } => {
         if user.is_none() {return;}
-        self.broadcast(ServerMessage::Voice { username: user.unwrap().username, samples });
+        self.broadcast(ServerMessage::Voice { username: user.unwrap().username, samples }, Some(addr));
       },
       _ => {}
     }
@@ -82,8 +82,9 @@ impl Server {
     self.socket.as_ref().unwrap().send_to(&command.to_bytes(), addr)
   }
 
-  fn broadcast(&self, command: ServerMessage) {
+  fn broadcast(&self, command: ServerMessage, ignore: Option<SocketAddr>) {
     self.users.lock().unwrap().iter().for_each(|(addr, user)| {
+      if Some(addr) == ignore.as_ref() {return;}
       self.send(*addr, command.clone()).unwrap();
     })
   }
