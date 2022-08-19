@@ -76,7 +76,7 @@ impl AudioService {
 
   pub fn push(&mut self, sample: i16) -> Result<(), anyhow::Error> {
     let mut input = self.input.lock().unwrap();
-    input.push(sample as f32).unwrap();
+    input.push((sample as f32 / i16::MAX as f32)).unwrap();
     Ok(())
   }
 
