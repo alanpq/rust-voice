@@ -29,7 +29,9 @@ pub struct AudioService {
   host: cpal::Host,
   output_device: cpal::Device,
   input_device: cpal::Device,
-  config: cpal::StreamConfig,
+
+  input_config: cpal::StreamConfig,
+  output_config: cpal::StreamConfig,
 
   latency_ms: f32,
   latency_frames: f32,
@@ -101,7 +103,7 @@ impl AudioService {
         });
       }
     };
-    self.input_device.build_input_stream(&self.config, data_fn, error)
+    self.input_device.build_input_stream(&self.input_config, data_fn, error)
   }
 
   fn make_output_stream(&mut self) -> Result<Stream, BuildStreamError> {
@@ -124,7 +126,7 @@ impl AudioService {
         log::error!("input stream fell behind: try increasing latency");
       }
     };
-    self.output_device.build_output_stream(&self.config, data_fn, error)
+    self.output_device.build_output_stream(&self.output_config, data_fn, error)
   }
 }
 
@@ -164,11 +166,14 @@ impl AudioServiceBuilder {
     debug!("Output device: {:?}", output_device.name()?);
     debug!("Input device: {:?}", input_device.name()?);
 
-    let config: cpal::StreamConfig = input_device.default_input_config()?.into();
-    debug!("Default input config: {:?}", config);
+    let input_config: cpal::StreamConfig = input_device.default_input_config()?.into();
+    debug!("Default input config: {:?}", input_config);
 
-    let latency_frames = (self.latency_ms / 1000.) * config.sample_rate.0 as f32;
-    let latency_samples = latency_frames as usize * config.channels as usize;
+    let output_config: cpal::StreamConfig = output_device.default_output_config()?.into();
+    debug!("Default output config: {:?}", output_config);
+
+    let latency_frames = (self.latency_ms / 1000.) * output_config.sample_rate.0 as f32;
+    let latency_samples = latency_frames as usize * output_config.channels as usize;
 
     let buffer = RingBuffer::new(latency_samples * 2);
     let (producer, consumer) = buffer.split();
@@ -178,7 +183,8 @@ impl AudioServiceBuilder {
       host: self.host,
       output_device,
       input_device,
-      config,
+      input_config,
+      output_config,
       latency_ms: self.latency_ms,
       latency_frames,
       latency_samples,

@@ -14,7 +14,8 @@ fn main() -> Result<(), anyhow::Error> {
   let (peer_tx, peer_rx) = channel::<(u32, Vec<i16>)>();
 
   let mut client = Client::new("test".to_string(), mic_rx, peer_tx);
-  client.connect("127.0.0.1:8080");
+  // client.connect("127.0.0.1:8080");
+  client.connect("109.79.192.120:8080");
 
   let client_arc = Arc::new(Mutex::new(client));
 
