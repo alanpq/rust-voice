@@ -67,6 +67,14 @@ impl Server {
         info!("'{}' connected", &username);
         info!("{} users connected", users.len());
       },
+      ClientMessage::Ping => {
+        if user.is_none() {return;}
+        self.send(addr, ServerMessage::Pong).unwrap();
+      },
+      ClientMessage::Voice { samples } => {
+        if user.is_none() {return;}
+        self.broadcast(ServerMessage::Voice { username: user.unwrap().username, samples });
+      },
       _ => {}
     }
   }
