@@ -78,7 +78,7 @@ impl AudioService {
 
   pub fn push(&mut self, sample: i16) -> Result<(), anyhow::Error> {
     let mut input = self.input.lock().unwrap();
-    input.push((sample as f32 / i16::MAX as f32)).unwrap();
+    input.push((sample as f32 / i16::MAX as f32));
     Ok(())
   }
 
@@ -169,8 +169,8 @@ impl AudioServiceBuilder {
     let input_device = self.input_device.or(Some(
       self.host.default_input_device().ok_or(anyhow!("no input device available"))?
     )).unwrap();
-    debug!("Output device: {:?}", output_device.name()?);
-    debug!("Input device: {:?}", input_device.name()?);
+    info!("Output device: {:?}", output_device.name()?);
+    info!("Input device: {:?}", input_device.name()?);
 
     let input_config: cpal::StreamConfig = input_device.default_input_config()?.into();
     debug!("Default input config: {:?}", input_config);
