@@ -8,7 +8,7 @@ mod audio;
 mod client;
 
 fn main() -> Result<(), anyhow::Error> {
-  env_logger::builder().filter_level(log::LevelFilter::Debug).init();
+  env_logger::builder().filter_level(log::LevelFilter::Info).init();
 
   let (mic_tx, mic_rx) = channel::<Vec<i16>>();
   let (peer_tx, peer_rx) = channel::<(u32, Vec<i16>)>();
@@ -34,7 +34,7 @@ fn main() -> Result<(), anyhow::Error> {
     std::thread::spawn(move || {
       let mut audio = AudioService::builder()
         .with_channels(mic_tx, peer_rx)
-        .with_latency(140.)
+        .with_latency(500.)
         .build().unwrap();
       audio.start().unwrap();
 

@@ -2,7 +2,7 @@ use std::{error::Error, sync::{Arc, Mutex, mpsc::{Sender, Receiver}}};
 use anyhow::{anyhow, Ok};
 use common::packets;
 use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, InputDevices, InputCallbackInfo, OutputCallbackInfo, Stream, BuildStreamError};
-use log::debug;
+use log::{debug, info};
 use ringbuf::{RingBuffer, Consumer, Producer};
 
 pub struct Input<T> {
@@ -122,9 +122,9 @@ impl AudioService {
           };
         }
       }
-      if input_fell_behind {
-        log::error!("input stream fell behind: try increasing latency");
-      }
+      // if input_fell_behind {
+      //   log::error!("input stream fell behind: try increasing latency");
+      // }
     };
     self.output_device.build_output_stream(&self.output_config, data_fn, error)
   }
@@ -171,6 +171,14 @@ impl AudioServiceBuilder {
 
     let output_config: cpal::StreamConfig = output_device.default_output_config()?.into();
     debug!("Default output config: {:?}", output_config);
+
+    info!("Input:");
+    info!(" - Channels: {}", input_config.channels);
+    info!(" - Sample Rate: {}", input_config.sample_rate.0);
+
+    info!("Output:");
+    info!(" - Channels: {}", output_config.channels);
+    info!(" - Sample Rate: {}", output_config.sample_rate.0);
 
     let latency_frames = (self.latency_ms / 1000.) * output_config.sample_rate.0 as f32;
     let latency_samples = latency_frames as usize * output_config.channels as usize;
