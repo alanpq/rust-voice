@@ -115,7 +115,7 @@ impl AudioService {
       {
         let mut output = output.lock().unwrap();
         // since currently all input is mono, we must duplicate the sample for every channel
-        for i in (0..data.len()).step_by(config.channels as usize) {
+        for i in (0..data.len() / config.channels as usize) {
           let sample = match output.pop() {
             Some(s) => s,
             None => {
@@ -124,7 +124,7 @@ impl AudioService {
             }
           };
           for j in 0..config.channels as usize {
-            data[i+j] = sample;
+            data[(i * config.channels as usize)+j] = sample;
           }
         }
       }
