@@ -64,7 +64,7 @@ impl Server {
         });
         // TODO: change response from pong to something more important
         self.send(addr, ServerMessage::Pong).unwrap();
-        info!("{} connected", &username);
+        info!("'{}' connected", &username);
         info!("{} users connected", users.len());
       },
       _ => {}
@@ -110,8 +110,11 @@ impl Server {
               if Instant::now().duration_since(last_heartbeat) <= self.config.heartbeat_interval { continue; }
               last_heartbeat = Instant::now();
               let mut users = self.users.lock().unwrap();
+              let user_count = users.len();
               users.retain(|_, user| user.last_reply.elapsed() < self.config.timeout);
-              info!("{} users connected", users.len());
+              if users.len() < user_count { // did we lose users
+                info!("{} users lost connection. ({} users connected)", user_count - users.len(), users.len());
+              }
             }
             _ => {
               error!("Failed to receive packet: {}", e);
