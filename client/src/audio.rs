@@ -92,10 +92,11 @@ impl AudioService {
   }
 
   fn make_input_stream(&mut self) -> Result<Stream, BuildStreamError> {
+    let config = self.input_config.clone();
     let mic_tx = self.mic_tx.clone();
     let data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
       {
-        let out: Vec<i16> = data.iter().map(|sample| {
+        let out: Vec<i16> = data.iter().step_by(config.channels as usize).map(|sample| {
           (*sample * i16::MAX as f32) as i16
         }).collect();
         out.chunks((packets::PACKET_MAX_SIZE / 2) - 12).for_each(|chunk| {
@@ -107,19 +108,24 @@ impl AudioService {
   }
 
   fn make_output_stream(&mut self) -> Result<Stream, BuildStreamError> {
+    let config = self.output_config.clone();
     let output = self.output.clone();
     let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
       let mut input_fell_behind = false;
       {
         let mut output = output.lock().unwrap();
-        for sample in data {
-          *sample = match output.pop() {
+        // since currently all input is mono, we must duplicate the sample for every channel
+        for i in (0..data.len()).step_by(config.channels as usize) {
+          let sample = match output.pop() {
             Some(s) => s,
             None => {
               input_fell_behind = true;
               0.0
             }
           };
+          for j in 0..config.channels as usize {
+            data[i+j] = sample;
+          }
         }
       }
       // if input_fell_behind {
