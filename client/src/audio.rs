@@ -96,7 +96,7 @@ impl AudioService {
         let out: Vec<i16> = data.iter().map(|sample| {
           (*sample * i16::MAX as f32) as i16
         }).collect();
-        out.chunks(50).for_each(|chunk| {
+        out.chunks((packets::PACKET_MAX_SIZE / 2) - 12).for_each(|chunk| {
           mic_tx.send(chunk.to_vec()).unwrap();
         });
       }

@@ -82,7 +82,7 @@ impl Client {
   }
 
   fn recv(&mut self, buf: &[u8]) {
-    info!("Received {:?} bytes", buf.len());
+    // info!("Received {:?} bytes", buf.len());
     let command = packets::ServerMessage::from_bytes(buf).expect("Invalid packet from server.");
     match command {
       ServerMessage::Voice { username, samples } => {

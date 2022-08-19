@@ -41,7 +41,6 @@ impl Server {
   }
   
   fn handle_command(&self, addr: SocketAddr, command: ClientMessage) {
-    debug!("got command: {:?}", command);
     let user = {
       let mut users = self.users.lock().unwrap();
       let mut user = users.get_mut(&addr);
