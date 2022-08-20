@@ -8,6 +8,7 @@ use crate::config::ServerConfig;
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct User {
+  pub id: u32,
   pub username: String,
   pub addr: SocketAddr,
   pub last_reply: Instant,
@@ -56,7 +57,9 @@ impl Server {
           return;
         }
         let mut users = self.users.lock().unwrap();
+        let count = users.len();
         users.insert(addr, User {
+          id: count as u32,
           username: username.clone(),
           addr,
           last_reply: Instant::now(),
