@@ -1,4 +1,5 @@
 use std::{sync::{Arc, Mutex, mpsc::channel, atomic::{AtomicBool, Ordering}}, net::SocketAddr};
+use clap::Parser;
 
 use audio::AudioService;
 use client::Client;
@@ -7,15 +8,29 @@ use common::packets::ClientMessage;
 mod audio;
 mod client;
 
+#[derive(Parser, Debug)]
+#[clap(name="Rust Voice Server")]
+struct Args {
+  #[clap(value_parser)]
+  address: String,
+  #[clap(value_parser = clap::value_parser!(u16).range(1..), short='p', long="port", default_value_t=8080)]
+  port: u16,
+}
+
+
 fn main() -> Result<(), anyhow::Error> {
   env_logger::builder().filter_level(log::LevelFilter::Info).init();
+
+  let args = Args::parse();
+
+  let addr = format!("{}:{}", args.address, args.port)
+    .parse::<SocketAddr>().expect("Invalid server address.");
 
   let (mic_tx, mic_rx) = channel::<Vec<i16>>();
   let (peer_tx, peer_rx) = channel::<(u32, Vec<i16>)>();
 
   let mut client = Client::new("test".to_string(), mic_rx, peer_tx);
-  // client.connect("127.0.0.1:8080");
-  client.connect("109.79.192.120:8080");
+  client.connect(addr);
 
   let client_arc = Arc::new(Mutex::new(client));
 
