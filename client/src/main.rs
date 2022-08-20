@@ -15,6 +15,8 @@ struct Args {
   address: String,
   #[clap(value_parser = clap::value_parser!(u16).range(1..), short='p', long="port", default_value_t=8080)]
   port: u16,
+  #[clap(value_parser, long="latency", default_value_t=150.)]
+  latency: f32,
 }
 
 
@@ -49,7 +51,7 @@ fn main() -> Result<(), anyhow::Error> {
     std::thread::spawn(move || {
       let mut audio = AudioService::builder()
         .with_channels(mic_tx, peer_rx)
-        .with_latency(500.)
+        .with_latency(100.)
         .build().unwrap();
       audio.start().unwrap();
 
@@ -57,7 +59,7 @@ fn main() -> Result<(), anyhow::Error> {
         match audio.peer_rx.recv() {
           Ok((peer_id, samples)) => {
             for sample in samples {
-              audio.push(sample).unwrap();
+              audio.push(peer_id, sample).unwrap();
             }
           }
           Err(e) => {

@@ -85,8 +85,8 @@ impl Client {
     // info!("Received {:?} bytes", buf.len());
     let command = packets::ServerMessage::from_bytes(buf).expect("Invalid packet from server.");
     match command {
-      ServerMessage::Voice { username, samples } => {
-        self.peer_tx.send((0, samples)).unwrap();
+      ServerMessage::Voice { user, samples } => {
+        self.peer_tx.send((user, samples)).unwrap();
       },
       _ => {
         error!("Unexpected packet from server: {:?}", command);

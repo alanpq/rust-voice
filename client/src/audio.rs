@@ -1,29 +1,9 @@
-use std::{error::Error, sync::{Arc, Mutex, mpsc::{Sender, Receiver}}};
+use std::{error::Error, sync::{Arc, Mutex, mpsc::{Sender, Receiver}}, collections::HashMap};
 use anyhow::{anyhow, Ok};
 use common::packets;
 use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, InputDevices, InputCallbackInfo, OutputCallbackInfo, Stream, BuildStreamError};
 use log::{debug, info};
 use ringbuf::{RingBuffer, Consumer, Producer};
-
-pub struct Input<T> {
-  producer: Producer<T>
-}
-
-impl<T> Input<T> {
-  pub fn push(&mut self, sample: T) -> Result<(), T> {
-    self.producer.push(sample)
-  }
-}
-
-pub struct Output<T> {
-  consumer: Consumer<T>
-}
-
-impl<T> Output<T> {
-  pub fn pop(&mut self) -> Option<T> {
-    self.consumer.pop()
-  }
-}
 
 pub struct AudioService {
   host: cpal::Host,
@@ -36,8 +16,9 @@ pub struct AudioService {
   latency_ms: f32,
   latency_frames: f32,
   latency_samples: usize,
-  input: Arc<Mutex<Input<f32>>>,
-  output: Arc<Mutex<Output<f32>>>,
+  
+  peer_buffers_rx: Arc<Mutex<HashMap<u32, Consumer<f32>>>>,
+  peer_buffers_tx: Arc<Mutex<HashMap<u32, Producer<f32>>>>,
 
   input_stream: Option<Stream>,
   output_stream: Option<Stream>,
@@ -61,12 +42,12 @@ impl AudioService {
     if self.running {
       return Ok(());
     }
-    {
-      let mut input = self.input.lock().unwrap();
-      for _ in 0..self.latency_samples {
-        input.push(0.0).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
-      }
-    }
+    // {
+    //   let mut input = self.input.lock().unwrap();
+    //   for _ in 0..self.latency_samples {
+    //     input.push(0.0).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
+    //   }
+    // }
 
     self.input_stream = Some(self.make_input_stream()?);
     self.output_stream = Some(self.make_output_stream()?);
@@ -76,9 +57,30 @@ impl AudioService {
     Ok(())
   }
 
-  pub fn push(&mut self, sample: i16) -> Result<(), anyhow::Error> {
-    let mut input = self.input.lock().unwrap();
-    input.push((sample as f32 / i16::MAX as f32));
+  fn create_peer_buffer(&mut self, peer: u32) {
+    let mut buf = RingBuffer::new(self.latency_samples*2);
+    let (mut producer, consumer) = buf.split();
+    for _ in 0..self.latency_samples {
+      producer.push(0.0).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
+    }
+    {
+      self.peer_buffers_tx.lock().unwrap().insert(peer, producer);
+      self.peer_buffers_rx.lock().unwrap().insert(peer, consumer);
+    }
+  }
+
+  pub fn push(&mut self, peer: u32, sample: i16) -> Result<(), anyhow::Error> {
+    {
+      let input = self.peer_buffers_tx.lock().unwrap();
+      if !input.contains_key(&peer) {
+        drop(input); // cheeky borrow bypass
+        self.create_peer_buffer(peer);
+      }
+    }
+    {
+      let mut input = self.peer_buffers_tx.lock().unwrap();
+      input.get_mut(&peer).unwrap().push((sample as f32 / i16::MAX as f32));
+    }
     Ok(())
   }
 
@@ -109,24 +111,27 @@ impl AudioService {
 
   fn make_output_stream(&mut self) -> Result<Stream, BuildStreamError> {
     let config = self.output_config.clone();
-    let output = self.output.clone();
+    let rx = self.peer_buffers_rx.clone();
     let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
       let mut input_fell_behind = false;
       {
-        let mut output = output.lock().unwrap();
-        // since currently all input is mono, we must duplicate the sample for every channel
-        for i in (0..data.len() / config.channels as usize) {
-          let sample = match output.pop() {
-            Some(s) => s,
-            None => {
-              input_fell_behind = true;
-              0.0
+        let mut rx = rx.lock().unwrap();
+        for (peer, buf) in rx.iter_mut() {
+          for i in (0..data.len() / config.channels as usize) {
+            let sample = match buf.pop() {
+              Some(s) => s,
+              None => {
+                input_fell_behind = true;
+                0.0
+              }
+            };
+            for j in 0..config.channels as usize {
+              data[(i * config.channels as usize)+j] = sample;
             }
-          };
-          for j in 0..config.channels as usize {
-            data[(i * config.channels as usize)+j] = sample;
           }
         }
+        // since currently all input is mono, we must duplicate the sample for every channel
+        
       }
       // if input_fell_behind {
       //   log::error!("input stream fell behind: try increasing latency");
@@ -189,10 +194,6 @@ impl AudioServiceBuilder {
     let latency_frames = (self.latency_ms / 1000.) * output_config.sample_rate.0 as f32;
     let latency_samples = latency_frames as usize * output_config.channels as usize;
 
-    let buffer = RingBuffer::new(latency_samples * 2);
-    let (producer, consumer) = buffer.split();
-
-
     Ok(AudioService {
       host: self.host,
       output_device,
@@ -202,8 +203,10 @@ impl AudioServiceBuilder {
       latency_ms: self.latency_ms,
       latency_frames,
       latency_samples,
-      input: Arc::new(Mutex::new(Input { producer })),
-      output: Arc::new(Mutex::new(Output { consumer })),
+      
+      peer_buffers_rx: Arc::new(Mutex::new(HashMap::new())),
+      peer_buffers_tx: Arc::new(Mutex::new(HashMap::new())),
+
       input_stream: None,
       output_stream: None,
       running: false,

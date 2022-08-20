@@ -66,7 +66,7 @@ impl Server {
         });
         // TODO: change response from pong to something more important
         self.send(addr, ServerMessage::Pong).unwrap();
-        info!("'{}' connected", &username);
+        info!("'{}' ({}) connected", &username, count);
         info!("{} users connected", users.len());
       },
       ClientMessage::Ping => {
@@ -75,7 +75,7 @@ impl Server {
       },
       ClientMessage::Voice { samples } => {
         if user.is_none() {return;}
-        self.broadcast(ServerMessage::Voice { username: user.unwrap().username, samples }, Some(addr));
+        self.broadcast(ServerMessage::Voice { user: user.unwrap().id, samples }, Some(addr));
       },
       _ => {}
     }

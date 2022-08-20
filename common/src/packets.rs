@@ -23,7 +23,7 @@ impl ClientMessage {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ServerMessage {
   Pong,
-  Voice { username: String, samples: Vec<i16> },
+  Voice { user: u32, samples: Vec<i16> },
 }
 
 impl ServerMessage {
