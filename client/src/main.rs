@@ -4,6 +4,7 @@ use clap::Parser;
 use audio::AudioService;
 use client::Client;
 use common::packets::ClientMessage;
+use env_logger::Env;
 
 mod audio;
 mod client;
