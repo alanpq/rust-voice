@@ -2,7 +2,7 @@ use std::{error::Error, sync::{Arc, Mutex, mpsc::{Sender, Receiver}, atomic::{At
 use anyhow::{anyhow, Ok};
 use common::packets;
 use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, InputDevices, InputCallbackInfo, OutputCallbackInfo, Stream, BuildStreamError};
-use log::{debug, info};
+use log::{debug, info, error, warn};
 use ringbuf::{RingBuffer, Consumer, Producer};
 
 pub struct AudioService {
@@ -122,18 +122,6 @@ impl AudioService {
     self.output_device.build_output_stream(&self.output_config, data_fn, error)
   }
 
-  fn create_peer_buffer(&mut self, peer: u32) {
-    let mut buf = RingBuffer::new(self.latency_samples*2);
-    let (mut producer, consumer) = buf.split();
-    for _ in 0..self.latency_samples {
-      producer.push(0.0).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
-    }
-    {
-      self.peer_buffers_tx.lock().unwrap().insert(peer, producer);
-      self.peer_buffers_rx.lock().unwrap().insert(peer, consumer);
-    }
-  }
-
   fn decoder(&mut self) {
     let config = self.output_config.clone();
     let peer_decoders = self.peer_decoders.clone();
@@ -157,7 +145,7 @@ impl AudioService {
                 Result::Ok(samples) => {
                   let mut pb_tx = peer_buffers_tx.lock().unwrap();
                   if !pb_tx.contains_key(&peer) {
-                    let mut buf = RingBuffer::new(latency_samples*2);
+                    let buf = RingBuffer::new(latency_samples*2);
                     let (mut producer, consumer) = buf.split();
                     for _ in 0..latency_samples {
                       producer.push(0.0).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
@@ -165,9 +153,11 @@ impl AudioService {
                     pb_tx.insert(peer, producer);
                     peer_buffers_rx.lock().unwrap().insert(peer, consumer);
                   }
-                  let tx = pb_tx.get_mut(&peer).unwrap();
+                  let tx = pb_tx.get_mut(&peer).expect(format!("peer buffer tx not found for peer {}", peer).as_str());
                   for i in 0..samples {
-                    tx.push(output[i]).unwrap();
+                    if let Result::Err(_) = tx.push(output[i]) {
+                      warn!("failed to push decoded frame to peer buffer (peer {})", peer);
+                    }
                   }
                 },
                 Err(e) => {
