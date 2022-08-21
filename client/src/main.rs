@@ -51,7 +51,7 @@ fn main() -> Result<(), anyhow::Error> {
     std::thread::spawn(move || {
       let mut audio = AudioService::builder()
         .with_channels(mic_tx, peer_rx)
-        .with_latency(100.)
+        .with_latency(args.latency)
         .build().unwrap();
       audio.start().unwrap();
 
