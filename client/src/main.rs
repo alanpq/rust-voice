@@ -28,8 +28,8 @@ fn main() -> Result<(), anyhow::Error> {
   let addr = format!("{}:{}", args.address, args.port)
     .parse::<SocketAddr>().expect("Invalid server address.");
 
-  let (mic_tx, mic_rx) = channel::<Vec<i16>>();
-  let (peer_tx, peer_rx) = channel::<(u32, Vec<i16>)>();
+  let (mic_tx, mic_rx) = channel::<Vec<u8>>();
+  let (peer_tx, peer_rx) = channel::<(u32, Vec<u8>)>();
 
   let mut client = Client::new("test".to_string(), mic_rx, peer_tx);
   client.connect(addr);
@@ -44,10 +44,11 @@ fn main() -> Result<(), anyhow::Error> {
     });
   }
 
-  let audio_running = Arc::new(AtomicBool::new(true));
+  let audio_running_lock = Arc::new(Mutex::new(()));
+  let audio_guard = audio_running_lock.lock().unwrap();
 
   {
-    let audio_running = audio_running.clone();
+    let audio_running_lock = audio_running_lock.clone();
     std::thread::spawn(move || {
       let mut audio = AudioService::builder()
         .with_channels(mic_tx, peer_rx)
@@ -55,27 +56,15 @@ fn main() -> Result<(), anyhow::Error> {
         .build().unwrap();
       audio.start().unwrap();
 
-      while audio_running.load(Ordering::SeqCst) {
-        match audio.peer_rx.recv() {
-          Ok((peer_id, samples)) => {
-            for sample in samples {
-              audio.push(peer_id, sample).unwrap();
-            }
-          }
-          Err(e) => {
-            println!("{:?}", e);
-            break;
-          }
-        }
-      }
-
+      let _ = audio_running_lock.lock().unwrap(); // this will hang until the lock is released
+      
       audio.stop();
+
     });
   }
 
-  // mutex will be unlocked when client is closed.
   handle.join().unwrap();
-  audio_running.store(false, Ordering::SeqCst);
+  drop(audio_guard); // release the mutex, allowing the audio thread to finish
   
   
   Ok(())
