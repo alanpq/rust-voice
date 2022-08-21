@@ -77,6 +77,9 @@ impl Server {
         info!("'{}' ({}) connected", &username, count);
         // TODO: change response from pong to something more important
         self.send(addr, ServerMessage::Pong).unwrap();
+        for u in users.values() {
+          self.send(user.addr, ServerMessage::Connected(u.info())).unwrap();
+        }
         users.insert(addr, user.clone());
         info!("{} users connected", users.len());
         drop(users);
