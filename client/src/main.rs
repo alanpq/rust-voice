@@ -72,13 +72,7 @@ fn main() -> Result<(), anyhow::Error> {
 
       let input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
       let mut encoder = OpusEncoder::new(audio.out_config().sample_rate.0).unwrap();
-      let mut decoder = OpusDecoder::new(audio.out_config().sample_rate.0).unwrap();
       encoder.add_output(mic_tx);
-
-      let (test_tx, test_rx) = channel::<Vec<u8>>();
-      encoder.add_output(test_tx);
-
-      let audio_tx = audio.get_output_tx();
 
       while client_is_running.load(Ordering::SeqCst) {
         match peer_rx.try_recv() {
@@ -93,18 +87,6 @@ fn main() -> Result<(), anyhow::Error> {
         }
         if let Ok(sample) = input_consumer.try_recv() {
           encoder.push(sample);
-        }
-        if let Ok(packet) = test_rx.try_recv() {
-          match decoder.decode(&packet) {
-            Ok(samples) => {
-              for sample in samples {
-                audio_tx.send(sample).unwrap();
-              }
-            }
-            Err(e) => {
-              error!("Error decoding test packet: {}", e);
-            }
-          }
         }
         mixer.tick();
         // std::thread::sleep(Duration::from_millis(200));
