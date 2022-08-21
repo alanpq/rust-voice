@@ -113,33 +113,23 @@ impl AudioService {
     let config = self.output_config.clone();
     let rx = self.peer_buffers_rx.clone();
     let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-      let mut input_fell_behind = false;
       {
         let mut rx = rx.lock().unwrap();
+        // fill each sample of the output buffer
         for i in (0..data.len() / config.channels as usize) {
           let mut final_sample = 0.0;
-          for (peer, buf) in rx.iter_mut() {
-            let sample = match buf.pop() {
-              Some(s) => s,
-              None => {
-                input_fell_behind = true;
-                0.0
-              }
-            };
-            final_sample += sample;
+          // sum each peer's sample
+          for (_peer, buf) in rx.iter_mut() {
+            final_sample += buf.pop().unwrap_or(0.0);
           }
           
+          // since currently all input is mono, we must duplicate the sample for every channel
           for j in 0..config.channels as usize {
             data[(i * config.channels as usize)+j] = final_sample;
           }
         }
         
-        // since currently all input is mono, we must duplicate the sample for every channel
-        
       }
-      // if input_fell_behind {
-      //   log::error!("input stream fell behind: try increasing latency");
-      // }
     };
     self.output_device.build_output_stream(&self.output_config, data_fn, error)
   }
