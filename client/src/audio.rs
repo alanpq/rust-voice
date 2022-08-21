@@ -2,7 +2,7 @@ use std::{error::Error, sync::{Arc, Mutex, mpsc::{Sender, Receiver}, atomic::{At
 use anyhow::{anyhow, Ok};
 use common::packets;
 use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, InputDevices, InputCallbackInfo, OutputCallbackInfo, Stream, BuildStreamError};
-use log::{debug, info};
+use log::{debug, info, error, warn};
 use ringbuf::{RingBuffer, Consumer, Producer};
 
 pub struct AudioService {
@@ -165,9 +165,11 @@ impl AudioService {
                     pb_tx.insert(peer, producer);
                     peer_buffers_rx.lock().unwrap().insert(peer, consumer);
                   }
-                  let tx = pb_tx.get_mut(&peer).unwrap();
+                  let tx = pb_tx.get_mut(&peer).expect(format!("peer buffer tx not found for peer {}", peer).as_str());
                   for i in 0..samples {
-                    tx.push(output[i]).unwrap();
+                    if let Result::Err(_) = tx.push(output[i]) {
+                      warn!("failed to push decoded frame to peer buffer (peer {})", peer);
+                    }
                   }
                 },
                 Err(e) => {
