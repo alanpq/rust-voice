@@ -76,6 +76,7 @@ impl Server {
       ClientMessage::Voice { samples } => {
         if user.is_none() {return;}
         self.broadcast(ServerMessage::Voice { user: user.unwrap().id, samples }, Some(addr));
+        // self.broadcast(ServerMessage::Voice { user: user.unwrap().id, samples }, None);
       },
       _ => {}
     }

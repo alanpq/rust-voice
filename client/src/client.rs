@@ -8,12 +8,12 @@ pub struct Client {
   socket: UdpSocket,
   connected: bool,
 
-  mic_rx: Receiver<Vec<i16>>,
-  peer_tx: Sender<(u32, Vec<i16>)>,
+  mic_rx: Receiver<Vec<u8>>,
+  peer_tx: Sender<(u32, Vec<u8>)>,
 }
 
 impl Client {
-  pub fn new(username: String, mic_rx: Receiver<Vec<i16>>, peer_tx: Sender<(u32,Vec<i16>)>) -> Self {
+  pub fn new(username: String, mic_rx: Receiver<Vec<u8>>, peer_tx: Sender<(u32,Vec<u8>)>) -> Self {
     Self {
       username,
       socket: UdpSocket::bind("0.0.0.0:0").unwrap(),

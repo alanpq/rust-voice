@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-pub const PACKET_MAX_SIZE: usize = 1430;
+pub const PACKET_MAX_SIZE: usize = 4000;
 
 #[derive(Clone)]
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ClientMessage {
   Connect { username: String },
   Ping,
-  Voice { samples: Vec<i16> },
+  Voice { samples: Vec<u8> },
 }
 
 impl ClientMessage {
@@ -23,7 +23,7 @@ impl ClientMessage {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ServerMessage {
   Pong,
-  Voice { user: u32, samples: Vec<i16> },
+  Voice { user: u32, samples: Vec<u8> },
 }
 
 impl ServerMessage {
