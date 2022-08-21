@@ -74,7 +74,7 @@ impl Client {
           }
           match self.mic_rx.lock().unwrap().try_recv() {
             Ok(samples) => {
-              info!("sending voice packet");
+              // info!("sending voice packet");
               self.send(packets::ClientMessage::Voice { samples });
             }
             Err(e) => {

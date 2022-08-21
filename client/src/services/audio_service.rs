@@ -24,7 +24,7 @@ pub struct AudioService {
   output_stream: Option<Stream>,
 
   output_tx: Sender<f32>,
-  output_rx: Option<Receiver<f32>>,
+  output_rx: Arc<Mutex<Receiver<f32>>>,
 
   mic_tx: Sender<f32>,
   mic_rx: Option<Receiver<f32>>,
@@ -79,11 +79,14 @@ impl AudioService {
     drop(self.output_stream.take());
   }
 
-  fn make_input_stream(&mut self) -> Result<Stream, BuildStreamError> {
-    let mut producer = self.mic_tx.clone();
+  fn make_input_stream(&self) -> Result<Stream, BuildStreamError> {
+    let mic_tx = self.mic_tx.clone();
+    let config = self.input_config.clone();
     let data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
-      for sample in data {
-        producer.send(*sample);
+      for sample in data.iter().step_by(config.channels as usize) {
+        if let Err(e) = mic_tx.send(*sample) {
+          warn!("failed to send mic data to mic_tx: {:?}", e);
+        }
       }
     };
     self.input_device.build_input_stream(&self.input_config, data_fn, error)
@@ -91,9 +94,10 @@ impl AudioService {
 
   fn make_output_stream(&mut self) -> Result<Stream, BuildStreamError> {
     let config = self.output_config.clone();
-    let mut rx = self.output_rx.take().expect("output rx already taken. did you already call make_output_stream?");
+    let mut rx = self.output_rx.clone();//.expect("output rx already taken. did you already call make_output_stream?");
     let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
       {
+        let rx = rx.lock().unwrap();
         let channels = config.channels as usize;
         for i in 0..data.len()/channels {
           // since currently all input is mono, we must duplicate the sample for every channel
@@ -157,12 +161,6 @@ impl AudioServiceBuilder {
     let (output_tx, output_rx) = mpsc::channel();
     let (mic_tx, mic_rx) = mpsc::channel();
 
-    let encoder_frame_size = (input_sample_rate * 20) as usize / 1000;
-    
-
-    info!("Encoder:");
-    info!(" - Frame Size: {}", encoder_frame_size);
-
     Ok(AudioService {
       host: self.host,
       output_device,
@@ -177,7 +175,7 @@ impl AudioServiceBuilder {
       output_stream: None,
 
       output_tx,
-      output_rx: Some(output_rx),
+      output_rx: Arc::new(Mutex::new(output_rx)),
 
       mic_tx,
       mic_rx: Some(mic_rx),
