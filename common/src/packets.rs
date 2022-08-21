@@ -5,8 +5,10 @@ pub const PACKET_MAX_SIZE: usize = 4000;
 #[derive(Clone)]
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ClientMessage {
+  /// request to connect to a server
   Connect { username: String },
   Ping,
+  /// send voice to the server
   Voice { samples: Vec<u8> },
 }
 
@@ -23,6 +25,9 @@ impl ClientMessage {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ServerMessage {
   Pong,
+  /// a user connected
+  Connected { user: u32, name: String },
+  /// voice packet from a user
   Voice { user: u32, samples: Vec<u8> },
 }
 
