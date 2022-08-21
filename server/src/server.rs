@@ -58,16 +58,18 @@ impl Server {
         }
         let mut users = self.users.lock().unwrap();
         let count = users.len();
-        users.insert(addr, User {
+        let user = User {
           id: count as u32,
           username: username.clone(),
           addr,
           last_reply: Instant::now(),
-        });
-        // TODO: change response from pong to something more important
-        self.send(addr, ServerMessage::Pong).unwrap();
+        };
         info!("'{}' ({}) connected", &username, count);
         info!("{} users connected", users.len());
+        // TODO: change response from pong to something more important
+        self.send(addr, ServerMessage::Pong).unwrap();
+        self.broadcast(ServerMessage::Connected { user: user.id, name: username }, Some(addr));
+        users.insert(addr, user);
       },
       ClientMessage::Ping => {
         if user.is_none() {return;}
