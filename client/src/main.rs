@@ -1,13 +1,16 @@
-use std::{sync::{Arc, Mutex, mpsc::channel, atomic::{AtomicBool, Ordering}}, net::SocketAddr};
+use std::{sync::{Arc, Mutex, mpsc::channel, atomic::{AtomicBool, Ordering}}, net::SocketAddr, time::Duration};
 use clap::Parser;
 
-use audio::AudioService;
+use latency::Latency;
+use log::{info, error};
+use services::{AudioService, PeerMixer, OpusEncoder};
 use client::Client;
-use common::packets::ClientMessage;
+use common::packets::{ClientMessage, self};
 use env_logger::Env;
 
-mod audio;
+mod services;
 mod client;
+mod latency;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rust Voice Server")]
@@ -35,37 +38,80 @@ fn main() -> Result<(), anyhow::Error> {
   let mut client = Client::new("test".to_string(), mic_rx, peer_tx);
   client.connect(addr);
 
-  let client_arc = Arc::new(Mutex::new(client));
-
-  let handle;
+  let client_arc = Arc::new(client);
+  let client_is_running = Arc::new(AtomicBool::new(true));
+  
+  let client_handle;
   {
+    let client_is_running = client_is_running.clone();
     let client_arc = client_arc.clone();
-    handle = std::thread::spawn(move|| {
-      client_arc.lock().unwrap().service();
+    client_handle = std::thread::spawn(move|| {
+      client_arc.service();
+      client_is_running.store(false, Ordering::SeqCst);
     });
   }
 
-  let audio_running_lock = Arc::new(Mutex::new(()));
-  let audio_guard = audio_running_lock.lock().unwrap();
 
+  let audio_handle;
   {
-    let audio_running_lock = audio_running_lock.clone();
-    std::thread::spawn(move || {
+    // let client = client_arc.clone();
+    audio_handle = std::thread::spawn(move || {
       let mut audio = AudioService::builder()
-        .with_channels(mic_tx, peer_rx)
         .with_latency(args.latency)
         .build().unwrap();
+
+        
+      let mixer = PeerMixer::new(
+        audio.out_config().sample_rate.0,
+        audio.out_latency(),
+        audio.get_output_tx()
+      );
       audio.start().unwrap();
 
-      let _ = audio_running_lock.lock().unwrap(); // this will hang until the lock is released
-      
+      let mut input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
+      let mut encoder = OpusEncoder::new(audio.out_config().sample_rate.0).unwrap();
+      encoder.set_output(mic_tx);
+
+      while client_is_running.load(Ordering::SeqCst) {
+        match peer_rx.try_recv() {
+          Ok((id, packet)) => {
+            mixer.push(id, &packet);
+          }
+          Err(e) => {
+            if e != std::sync::mpsc::TryRecvError::Empty {
+              error!("Error receiving packet: {}", e);
+            }
+          }
+        }
+        if let Ok(sample) = input_consumer.try_recv() {
+          encoder.push(sample);
+        }
+        mixer.tick();
+        // std::thread::sleep(Duration::from_millis(200));
+
+        // match .try_recv() {
+        //   Ok(packet) => {
+        //     client.send(packets::ClientMessage::Voice { samples: packet });
+        //   }
+        //   Err(e) => {
+        //     if e != std::sync::mpsc::TryRecvError::Empty {
+        //       error!("Error receiving packet: {}", e);
+        //     }
+        //   }
+        // }
+      }
+
       audio.stop();
 
     });
   }
 
-  handle.join().unwrap();
-  drop(audio_guard); // release the mutex, allowing the audio thread to finish
+  // client.on_peer_connected(|id, name| {
+  //   info!("{} has connected.", &name);
+  // });
+
+  client_handle.join().unwrap();
+  audio_handle.join().unwrap();
   
   
   Ok(())

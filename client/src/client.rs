@@ -1,4 +1,4 @@
-use std::{net::{UdpSocket, ToSocketAddrs}, sync::mpsc::{Sender, Receiver}, time::Instant};
+use std::{net::{UdpSocket, ToSocketAddrs}, sync::{mpsc::{Sender, Receiver}, Arc, Mutex}, time::Instant};
 
 use common::packets::{self, ServerMessage};
 use log::{debug, info, error};
@@ -10,8 +10,8 @@ pub struct Client {
   socket: UdpSocket,
   connected: bool,
 
-  mic_rx: Receiver<Vec<u8>>,
-  peer_tx: Sender<(u32, Vec<u8>)>,
+  mic_rx: Arc<Mutex<Receiver<Vec<u8>>>>,
+  peer_tx: Arc<Mutex<Sender<(u32, Vec<u8>)>>>,
 
   peer_connected_cb: Option<PeerConnectedCB>,
 }
@@ -22,8 +22,8 @@ impl Client {
       username,
       socket: UdpSocket::bind("0.0.0.0:0").unwrap(),
       connected: false,
-      mic_rx,
-      peer_tx,
+      mic_rx: Arc::new(Mutex::new(mic_rx)),
+      peer_tx: Arc::new(Mutex::new(peer_tx)),
 
       peer_connected_cb: None,
     }
@@ -61,9 +61,8 @@ impl Client {
     // self.socket.set_nonblocking(true);
   }
 
-  pub fn service(&mut self) {
+  pub fn service(&self) {
     self.socket.set_nonblocking(true).expect("Failed to set socket to non-blocking");
-    let mut last_sent_voice = Instant::now();
     loop {
       let mut buf = [0; packets::PACKET_MAX_SIZE];
       match self.socket.recv(&mut buf) {
@@ -73,17 +72,15 @@ impl Client {
             error!("Failed to receive packet: {}", e);
             break;
           }
-          if Instant::now().duration_since(last_sent_voice) <= std::time::Duration::from_millis(500) {
-            last_sent_voice = Instant::now();
-            match self.mic_rx.try_recv() {
-              Ok(samples) => {
-                self.send(packets::ClientMessage::Voice { samples });
-              }
-              Err(e) => {
-                if e == std::sync::mpsc::TryRecvError::Empty { continue; }
-                error!("Failed to receive samples: {}", e);
-                break;
-              }
+          match self.mic_rx.lock().unwrap().try_recv() {
+            Ok(samples) => {
+              info!("sending voice packet");
+              self.send(packets::ClientMessage::Voice { samples });
+            }
+            Err(e) => {
+              if e == std::sync::mpsc::TryRecvError::Empty { continue; }
+              error!("Failed to receive samples: {}", e);
+              break;
             }
           }
         }
@@ -91,15 +88,16 @@ impl Client {
     }
   }
 
-  fn recv(&mut self, buf: &[u8]) {
+  fn recv(&self, buf: &[u8]) {
     // info!("Received {:?} bytes", buf.len());
     let command = packets::ServerMessage::from_bytes(buf).expect("Invalid packet from server.");
     match command {
       ServerMessage::Voice { user, samples } => {
-        self.peer_tx.send((user, samples)).unwrap();
+        self.peer_tx.lock().unwrap().send((user, samples)).unwrap();
       },
       ServerMessage::Connected { user, name } => {
-        if let Some(cb) = self.peer_connected_cb.as_mut() {
+        info!("{} connected.", name);
+        if let Some(cb) = &self.peer_connected_cb {
           cb(user, &name);
         }
       }
