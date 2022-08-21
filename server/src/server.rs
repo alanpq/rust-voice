@@ -1,6 +1,6 @@
 use std::{net::{UdpSocket, SocketAddr}, collections::{LinkedList, HashMap}, sync::{Arc, Mutex}, time::Instant};
 
-use common::packets::{self, ClientMessage, ServerMessage};
+use common::{packets::{self, ClientMessage, ServerMessage}, UserInfo};
 use log::{info, debug, error};
 
 use crate::config::ServerConfig;
@@ -12,6 +12,15 @@ pub struct User {
   pub username: String,
   pub addr: SocketAddr,
   pub last_reply: Instant,
+}
+
+impl User {
+  pub fn info(&self) -> UserInfo {
+    UserInfo {
+      id: self.id,
+      username: self.username.clone(),
+    }
+  }
 }
 
 pub struct Server {
@@ -30,6 +39,7 @@ impl Server {
       running: false,
     }
   }
+
 
   pub fn start(&mut self) {
     if self.running {
@@ -70,7 +80,7 @@ impl Server {
         users.insert(addr, user.clone());
         info!("{} users connected", users.len());
         drop(users);
-        self.broadcast(ServerMessage::Connected { user: user.id, name: username }, Some(addr));
+        self.broadcast(ServerMessage::Connected (user.info()), Some(addr));
       },
       ClientMessage::Ping => {
         if user.is_none() {return;}

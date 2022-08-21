@@ -1,6 +1,7 @@
-use std::{sync::{Arc, Mutex, mpsc::channel, atomic::{AtomicBool, Ordering}}, net::SocketAddr, time::Duration};
+use std::{sync::{Arc, Mutex, mpsc::channel, atomic::{AtomicBool, Ordering}, RwLock}, net::SocketAddr, time::Duration};
 use clap::Parser;
 
+use crossbeam::channel::TryRecvError;
 use latency::Latency;
 use log::{info, error};
 use services::{AudioService, PeerMixer, OpusEncoder};
@@ -40,6 +41,8 @@ fn main() -> Result<(), anyhow::Error> {
   let mut client = Client::new("test".to_string(), mic_rx, peer_tx);
   client.connect(addr);
 
+  let client_peer_connected = client.get_peer_connected_rx();
+
   let client_arc = Arc::new(client);
   let client_is_running = Arc::new(AtomicBool::new(true));
   
@@ -53,6 +56,7 @@ fn main() -> Result<(), anyhow::Error> {
     });
   }
 
+  let mut mixer = Arc::new(RwLock::new(None));
 
   let audio_handle;
   {
@@ -62,12 +66,13 @@ fn main() -> Result<(), anyhow::Error> {
         .with_latency(args.latency)
         .build().unwrap();
 
-        
-      let mixer = PeerMixer::new(
-        audio.out_config().sample_rate.0,
-        audio.out_latency(),
-        audio.get_output_tx()
-      );
+      {
+        mixer.write().unwrap().replace(PeerMixer::new(
+          audio.out_config().sample_rate.0,
+          audio.out_latency(),
+          audio.get_output_tx()
+        ));
+      }
       audio.start().unwrap();
 
       let input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
@@ -77,6 +82,8 @@ fn main() -> Result<(), anyhow::Error> {
       while client_is_running.load(Ordering::SeqCst) {
         match peer_rx.try_recv() {
           Ok((id, packet)) => {
+            let mixer = mixer.read().unwrap();
+            let mixer = mixer.as_ref().unwrap();
             mixer.push(id, &packet);
           }
           Err(e) => {
@@ -88,29 +95,27 @@ fn main() -> Result<(), anyhow::Error> {
         if let Ok(sample) = input_consumer.try_recv() {
           encoder.push(sample);
         }
-        mixer.tick();
-        // std::thread::sleep(Duration::from_millis(200));
+        {
+          let mixer = mixer.read().unwrap();
+          let mixer = mixer.as_ref().unwrap();
+          match client_peer_connected.try_recv() {
+            Ok(info) => {
+              mixer.add_peer(info.id);
+            },
+            Err(e) if e != TryRecvError::Empty => {
+              error!("Error receiving peer connections: {}", e);
+            }
+            _ => {}
+        }
+          mixer.tick();
 
-        // match .try_recv() {
-        //   Ok(packet) => {
-        //     client.send(packets::ClientMessage::Voice { samples: packet });
-        //   }
-        //   Err(e) => {
-        //     if e != std::sync::mpsc::TryRecvError::Empty {
-        //       error!("Error receiving packet: {}", e);
-        //     }
-        //   }
-        // }
+        }
       }
 
       audio.stop();
 
     });
   }
-
-  // client.on_peer_connected(|id, name| {
-  //   info!("{} has connected.", &name);
-  // });
 
   client_handle.join().unwrap();
   audio_handle.join().unwrap();

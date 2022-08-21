@@ -1,9 +1,8 @@
 use std::{net::{UdpSocket, ToSocketAddrs}, sync::{mpsc::{Sender, Receiver}, Arc, Mutex}, time::Instant};
 
-use common::packets::{self, ServerMessage};
+use common::{packets::{self, ServerMessage}, UserInfo};
+use crossbeam::channel;
 use log::{debug, info, error};
-
-pub type PeerConnectedCB = fn(id: u32, name: &str);
 
 pub struct Client {
   username: String,
@@ -13,11 +12,13 @@ pub struct Client {
   mic_rx: Arc<Mutex<Receiver<Vec<u8>>>>,
   peer_tx: Arc<Mutex<Sender<(u32, Vec<u8>)>>>,
 
-  peer_connected_cb: Option<PeerConnectedCB>,
+  peer_connected_tx: channel::Sender<UserInfo>,
+  peer_connected_rx: channel::Receiver<UserInfo>,
 }
 
 impl Client {
   pub fn new(username: String, mic_rx: Receiver<Vec<u8>>, peer_tx: Sender<(u32,Vec<u8>)>) -> Self {
+    let (peer_connected_tx, peer_connected_rx) = channel::unbounded();
     Self {
       username,
       socket: UdpSocket::bind("0.0.0.0:0").unwrap(),
@@ -25,12 +26,13 @@ impl Client {
       mic_rx: Arc::new(Mutex::new(mic_rx)),
       peer_tx: Arc::new(Mutex::new(peer_tx)),
 
-      peer_connected_cb: None,
+      peer_connected_tx,
+      peer_connected_rx,
     }
   }
 
-  pub fn on_peer_connected(&mut self, cb: PeerConnectedCB) {
-    self.peer_connected_cb = Some(cb);
+  pub fn get_peer_connected_rx(&self) -> channel::Receiver<UserInfo> {
+    self.peer_connected_rx.clone()
   }
 
   pub fn connected(&self) -> bool { self.connected }
@@ -95,11 +97,9 @@ impl Client {
       ServerMessage::Voice { user, samples } => {
         self.peer_tx.lock().unwrap().send((user, samples)).unwrap();
       },
-      ServerMessage::Connected { user, name } => {
-        info!("{} connected.", name);
-        if let Some(cb) = &self.peer_connected_cb {
-          cb(user, &name);
-        }
+      ServerMessage::Connected (info) => {
+        info!("{} connected.", info.username);
+        self.peer_connected_tx.send(info).unwrap();
       }
       _ => {
         error!("Unexpected packet from server: {:?}", command);

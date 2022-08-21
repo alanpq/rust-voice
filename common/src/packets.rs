@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::UserInfo;
+
 pub const PACKET_MAX_SIZE: usize = 4000;
 
 #[derive(Clone)]
@@ -26,7 +28,7 @@ impl ClientMessage {
 pub enum ServerMessage {
   Pong,
   /// a user connected
-  Connected { user: u32, name: String },
+  Connected (UserInfo),
   /// voice packet from a user
   Voice { user: u32, samples: Vec<u8> },
 }

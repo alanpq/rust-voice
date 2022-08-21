@@ -18,7 +18,7 @@ pub struct PeerMixer {
   consumer_map: Arc<Mutex<HashMap<u32, Consumer<f32>>>>,
   decoder_map: Arc<Mutex<HashMap<u32, OpusDecoder>>>,
 
-  output_tx: Sender<f32>,
+  output_tx: Mutex<Sender<f32>>,
 
   last_push: Mutex<Instant>,
   push_rate: Duration,
@@ -32,7 +32,7 @@ impl PeerMixer {
       producer_map: Arc::new(Mutex::new(HashMap::with_capacity(EXPECTED_PEERS))),
       consumer_map: Arc::new(Mutex::new(HashMap::with_capacity(EXPECTED_PEERS))),
       decoder_map: Arc::new(Mutex::new(HashMap::with_capacity(EXPECTED_PEERS))),
-      output_tx,
+      output_tx: Mutex::new(output_tx),
       last_push: Mutex::new(Instant::now()),
       push_rate: Duration::from_secs_f32(1.0/(sample_rate as f32)),
     }
@@ -42,6 +42,7 @@ impl PeerMixer {
     let mut decoders = self.decoder_map.lock().unwrap();
     // FIXME: remove this hack
     if !decoders.contains_key(&peer) {
+      warn!("HACK: adding decoder for peer {}", peer);
       drop(decoders);
       self.add_peer(peer);
       decoders = self.decoder_map.lock().unwrap();
@@ -74,7 +75,8 @@ impl PeerMixer {
       }
     }
     if real_data {
-      if let Err(e) = self.output_tx.send(sample) {
+      let output_tx = self.output_tx.lock().unwrap();
+      if let Err(e) = output_tx.send(sample) {
         warn!("could not push sample: {}", e);
       }
     }
