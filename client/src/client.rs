@@ -3,6 +3,8 @@ use std::{net::{UdpSocket, ToSocketAddrs}, sync::mpsc::{Sender, Receiver}, time:
 use common::packets::{self, ServerMessage};
 use log::{debug, info, error};
 
+pub type PeerConnectedCB = fn(id: u32, name: &str);
+
 pub struct Client {
   username: String,
   socket: UdpSocket,
@@ -10,6 +12,8 @@ pub struct Client {
 
   mic_rx: Receiver<Vec<u8>>,
   peer_tx: Sender<(u32, Vec<u8>)>,
+
+  peer_connected_cb: Option<PeerConnectedCB>,
 }
 
 impl Client {
@@ -20,7 +24,13 @@ impl Client {
       connected: false,
       mic_rx,
       peer_tx,
+
+      peer_connected_cb: None,
     }
+  }
+
+  pub fn on_peer_connected(&mut self, cb: PeerConnectedCB) {
+    self.peer_connected_cb = Some(cb);
   }
 
   pub fn connected(&self) -> bool { self.connected }
@@ -88,6 +98,11 @@ impl Client {
       ServerMessage::Voice { user, samples } => {
         self.peer_tx.send((user, samples)).unwrap();
       },
+      ServerMessage::Connected { user, name } => {
+        if let Some(cb) = self.peer_connected_cb.as_mut() {
+          cb(user, &name);
+        }
+      }
       _ => {
         error!("Unexpected packet from server: {:?}", command);
       }
