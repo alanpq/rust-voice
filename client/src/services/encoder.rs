@@ -19,7 +19,7 @@ impl OpusEncoder {
   pub fn new(sample_rate: u32) -> Result<Self, anyhow::Error> {
     let encoder = opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
 
-    let frame_size = sample_rate as usize / 100;
+    let frame_size = (sample_rate as usize * 20) / 1000;
 
     Ok(Self {
       encoder: Arc::new(Mutex::new(encoder)),

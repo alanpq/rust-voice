@@ -8,7 +8,7 @@ pub struct OpusDecoder {
 impl OpusDecoder {
   pub fn new(sample_rate: u32) -> Result<Self, anyhow::Error> {
     let decoder = opus::Decoder::new(sample_rate, opus::Channels::Mono)?;
-    let frame_size = sample_rate as usize / 100;
+    let frame_size = (sample_rate as usize * 20) / 1000;
     Ok(Self {
       decoder: Arc::new(Mutex::new(decoder)),
       frame_size,
