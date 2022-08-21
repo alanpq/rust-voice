@@ -122,18 +122,6 @@ impl AudioService {
     self.output_device.build_output_stream(&self.output_config, data_fn, error)
   }
 
-  fn create_peer_buffer(&mut self, peer: u32) {
-    let mut buf = RingBuffer::new(self.latency_samples*2);
-    let (mut producer, consumer) = buf.split();
-    for _ in 0..self.latency_samples {
-      producer.push(0.0).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
-    }
-    {
-      self.peer_buffers_tx.lock().unwrap().insert(peer, producer);
-      self.peer_buffers_rx.lock().unwrap().insert(peer, consumer);
-    }
-  }
-
   fn decoder(&mut self) {
     let config = self.output_config.clone();
     let peer_decoders = self.peer_decoders.clone();
@@ -157,7 +145,7 @@ impl AudioService {
                 Result::Ok(samples) => {
                   let mut pb_tx = peer_buffers_tx.lock().unwrap();
                   if !pb_tx.contains_key(&peer) {
-                    let mut buf = RingBuffer::new(latency_samples*2);
+                    let buf = RingBuffer::new(latency_samples*2);
                     let (mut producer, consumer) = buf.split();
                     for _ in 0..latency_samples {
                       producer.push(0.0).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
