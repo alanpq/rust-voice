@@ -65,11 +65,12 @@ impl Server {
           last_reply: Instant::now(),
         };
         info!("'{}' ({}) connected", &username, count);
-        info!("{} users connected", users.len());
         // TODO: change response from pong to something more important
         self.send(addr, ServerMessage::Pong).unwrap();
+        users.insert(addr, user.clone());
+        info!("{} users connected", users.len());
+        drop(users);
         self.broadcast(ServerMessage::Connected { user: user.id, name: username }, Some(addr));
-        users.insert(addr, user);
       },
       ClientMessage::Ping => {
         if user.is_none() {return;}
