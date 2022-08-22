@@ -24,6 +24,10 @@ impl OpusEncoder {
     let opus_rate = nearest_opus_rate(sample_rate).unwrap();
     let frame_size = (opus_rate * 20) as usize / 1000;
     info!("Creating new OpusEncoder with frame size {} @ opus:{} hz (real:{} hz)", frame_size, opus_rate, sample_rate);
+    
+    if opus_rate != sample_rate {
+      warn!("Audio Resampling is not yet supported! Your audio will likely be distorted/pitched.");
+    }
 
     let encoder = opus::Encoder::new(opus_rate, opus::Channels::Mono, opus::Application::Voip)?;
     Ok(Self {

@@ -1,5 +1,5 @@
 use std::sync::{Mutex, Arc};
-use log::info;
+use log::{info, warn};
 
 use crate::util::opus::nearest_opus_rate;
 
@@ -18,6 +18,10 @@ impl OpusDecoder {
     let opus_rate = nearest_opus_rate(sample_rate).unwrap();
     let frame_size = (opus_rate * 20) as usize / 1000;
     info!("Creating new OpusDecoder with frame size {} @ opus:{} hz (real:{} hz)", frame_size, opus_rate, sample_rate);
+    
+    if opus_rate != sample_rate {
+      warn!("Audio Resampling is not yet supported! Your audio will likely be distorted/pitched.");
+    }
 
     let decoder = opus::Decoder::new(opus_rate, opus::Channels::Mono)?;
     Ok(Self {

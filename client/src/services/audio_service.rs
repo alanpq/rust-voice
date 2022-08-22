@@ -3,7 +3,7 @@ use anyhow::{anyhow, Ok};
 use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, Stream, BuildStreamError};
 use log::{debug, info, error, warn};
 
-use crate::latency::Latency;
+use crate::{latency::Latency, util::opus::OPUS_SAMPLE_RATES};
 
 pub struct AudioService {
   host: cpal::Host,
@@ -129,10 +129,41 @@ impl AudioServiceBuilder {
     info!("Output device: {:?}", output_device.name()?);
     info!("Input device: {:?}", input_device.name()?);
 
-    let input_config: cpal::StreamConfig = input_device.default_input_config()?.into();
+    let input_config: cpal::StreamConfig = match input_device.supported_input_configs() {
+      Result::Ok(configs) => {
+        let mut out = None;
+        for config in configs {
+          if out.is_some() { break; }
+          for rate in OPUS_SAMPLE_RATES {
+            if config.max_sample_rate().0 >= rate && config.min_sample_rate().0 <= rate {
+              out = Some(config.with_sample_rate(cpal::SampleRate(rate)).into());
+              break;
+            }
+          }
+        }
+        out
+      }
+      Err(_) => None
+    }.unwrap_or(input_device.default_input_config()?.into());
+    
     debug!("Default input config: {:?}", input_config);
 
-    let output_config: cpal::StreamConfig = output_device.default_output_config()?.into();
+    let output_config: cpal::StreamConfig = match output_device.supported_output_configs() {
+      Result::Ok(configs) => {
+        let mut out = None;
+        for config in configs {
+          if out.is_some() { break; }
+          for rate in OPUS_SAMPLE_RATES {
+            if config.max_sample_rate().0 >= rate && config.min_sample_rate().0 <= rate {
+              out = Some(config.with_sample_rate(cpal::SampleRate(rate)).into());
+              break;
+            }
+          }
+        }
+        out
+      }
+      Err(_) => None
+    }.unwrap_or(input_device.default_output_config()?.into());
     debug!("Default output config: {:?}", output_config);
 
     info!("Input:");
