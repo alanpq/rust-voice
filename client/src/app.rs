@@ -183,7 +183,7 @@ impl App {
 
     let (h, w) = window.get_max_yx();
 
-    let log_window = window.subwin(h - 2, (w as f32 * 0.75) as i32, 1, 0).unwrap();
+    let log_window = window.subwin(h - 1, (w as f32 * 0.75) as i32, 1, 0).unwrap();
     log_window.setscrreg(1, 2);
     log_window.scrollok(true);
 
