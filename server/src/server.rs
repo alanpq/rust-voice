@@ -1,7 +1,7 @@
 use std::{net::{UdpSocket, SocketAddr}, collections::{LinkedList, HashMap}, sync::{Arc, Mutex}, time::Instant};
 
 use common::{packets::{self, ClientMessage, ServerMessage}, UserInfo};
-use log::{info, debug, error};
+use log::{info, debug, error, warn};
 
 use crate::config::ServerConfig;
 
@@ -43,7 +43,7 @@ impl Server {
 
   pub fn start(&mut self) {
     if self.running {
-      println!("Server already running");
+      warn!("Server already running");
       return;
     }
 

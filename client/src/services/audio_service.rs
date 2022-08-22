@@ -27,7 +27,7 @@ pub struct AudioService {
 }
 
 fn error(err: cpal::StreamError) {
-  eprintln!("{}", err);
+  error!("{}", err);
 }
 
 impl AudioService {

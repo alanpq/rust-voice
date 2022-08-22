@@ -1,13 +1,14 @@
 use std::{sync::{Arc, Mutex, mpsc::{channel, Sender, Receiver}, atomic::{AtomicBool, Ordering}, RwLock}, net::SocketAddr, time::Duration, thread::JoinHandle};
+use app::LogPipe;
 use clap::Parser;
 
 use crossbeam::channel::{TryRecvError, self};
+use flexi_logger::{Logger, WriteMode};
 use latency::Latency;
 use log::{info, error};
 use services::{AudioService, PeerMixer, OpusEncoder};
 use client::Client;
 use common::{packets::{ClientMessage, self}, UserInfo};
-use env_logger::Env;
 
 use crate::services::OpusDecoder;
 
@@ -15,6 +16,7 @@ mod services;
 mod client;
 mod latency;
 mod util;
+mod app;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rust Voice Server")]
@@ -85,7 +87,11 @@ fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<(u32, Vec<u8>)>,mic_t
 }
 
 fn main() -> Result<(), anyhow::Error> {
-  env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+  let pipe = LogPipe::new();
+  Logger::try_with_str("info")?
+    .log_to_writer(Box::new(pipe.clone()))
+    .write_mode(WriteMode::Async)
+    .start()?;
 
   let args = Args::parse();
 
@@ -118,8 +124,17 @@ fn main() -> Result<(), anyhow::Error> {
 
   let audio_handle = audio_thread(state, peer_rx, mic_tx);
 
+  let app_handle = {
+    let pipe = pipe;
+    std::thread::spawn(move || {
+      let app = app::App::new(pipe);
+      app.run();
+    })
+  };
+
   client_handle.join().unwrap();
   audio_handle.join().unwrap();
+  app_handle.join().unwrap();
   
   
   Ok(())
