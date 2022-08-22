@@ -14,6 +14,7 @@ use crate::services::OpusDecoder;
 mod services;
 mod client;
 mod latency;
+mod util;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rust Voice Server")]
@@ -46,7 +47,7 @@ fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<(u32, Vec<u8>)>,mic_t
     audio.start().unwrap();
 
     let input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
-    let mut encoder = OpusEncoder::new(audio.out_config().sample_rate.0).unwrap();
+    let mut encoder = OpusEncoder::new(audio.out_config().sample_rate.0).expect("failed to create encoder");
     encoder.add_output(mic_tx);
 
     while state.client_running.load(Ordering::SeqCst) {

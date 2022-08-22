@@ -1,28 +1,38 @@
 use std::{collections::VecDeque, sync::{Mutex, Arc, mpsc::{Sender, self}}};
 
+use anyhow::anyhow;
+use crate::util::nearest_opus_rate;
 use common::packets;
 use log::{warn, info};
 
+
+
 pub struct OpusEncoder {
+  /// the real sample rate of the input
+  sample_rate: u32,
+  /// the sample rate of the encoder
+  opus_rate: u32,
+
   encoder: Arc<Mutex<opus::Encoder>>,
   frame_size: usize,
   /// buffer of raw audio data to encode
   buffer: Arc<Mutex<VecDeque<f32>>>,
 
   tx: Vec<Sender<Vec<u8>>>,
-  
 }
 
 
 
 impl OpusEncoder {
   pub fn new(sample_rate: u32) -> Result<Self, anyhow::Error> {
-    let encoder = opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
+    let opus_rate = nearest_opus_rate(sample_rate).unwrap();
+    let frame_size = (opus_rate * 20) as usize / 1000;
+    info!("Creating new OpusEncoder with frame size {} @ opus:{} hz (real:{} hz)", frame_size, opus_rate, sample_rate);
 
-    let frame_size = (sample_rate * 20) as usize / 1000;
-
-    info!("Created new OpusEncoder with frame_size {} @ {} hz", frame_size, sample_rate);
+    let encoder = opus::Encoder::new(opus_rate, opus::Channels::Mono, opus::Application::Voip)?;
     Ok(Self {
+      opus_rate,
+      sample_rate,
       encoder: Arc::new(Mutex::new(encoder)),
       frame_size,
       buffer: Arc::new(Mutex::new(VecDeque::with_capacity(frame_size*2))),

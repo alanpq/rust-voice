@@ -2,17 +2,28 @@ use std::sync::{Mutex, Arc};
 
 use log::info;
 
+use crate::util::nearest_opus_rate;
+
 pub struct OpusDecoder {
+  /// the real sample rate of the input
+  sample_rate: u32,
+  /// the sample rate of the encoder
+  opus_rate: u32,
+  
   decoder: Arc<Mutex<opus::Decoder>>,
   frame_size: usize,
 }
 
 impl OpusDecoder {
   pub fn new(sample_rate: u32) -> Result<Self, anyhow::Error> {
-    let decoder = opus::Decoder::new(sample_rate, opus::Channels::Mono)?;
-    let frame_size = (sample_rate as usize * 20) / 1000;
-    info!("Created new OpusDecoder with frame_size {} @ {} hz", frame_size, sample_rate);
+    let opus_rate = nearest_opus_rate(sample_rate).unwrap();
+    let frame_size = (opus_rate * 20) as usize / 1000;
+    info!("Creating new OpusDecoder with frame size {} @ opus:{} hz (real:{} hz)", frame_size, opus_rate, sample_rate);
+
+    let decoder = opus::Decoder::new(opus_rate, opus::Channels::Mono)?;
     Ok(Self {
+      opus_rate,
+      sample_rate,
       decoder: Arc::new(Mutex::new(decoder)),
       frame_size,
     })
