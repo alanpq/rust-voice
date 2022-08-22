@@ -48,12 +48,6 @@ impl AudioService {
   }
 
   pub fn start(&mut self) -> Result<(), anyhow::Error> {
-    // {
-    //   let mut input = self.input.lock().unwrap();
-    //   for _ in 0..self.latency_samples {
-    //     input.push(0.0).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
-    //   }
-    // }
     self.input_stream = Some(self.make_input_stream()?);
     self.output_stream = Some(self.make_output_stream()?);
     self.input_stream.as_ref().unwrap().play()?;
@@ -90,7 +84,7 @@ impl AudioService {
 
   fn make_output_stream(&mut self) -> Result<Stream, BuildStreamError> {
     let config = self.output_config.clone();
-    let rx = self.output_rx.clone();//.expect("output rx already taken. did you already call make_output_stream?");
+    let rx = self.output_rx.clone();
     let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
       {
         let rx = rx.lock().unwrap();
