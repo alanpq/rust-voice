@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::{Mutex, Arc, mpsc::{Sender, self}}};
+use std::{collections::VecDeque, sync::{Mutex, Arc, mpsc::Sender}};
 
 use common::packets;
 use log::{warn, info};

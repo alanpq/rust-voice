@@ -1,13 +1,9 @@
-use std::{error::Error, sync::{Arc, Mutex, mpsc::{Sender, Receiver, self}, atomic::{AtomicBool, Ordering}}, collections::{HashMap, VecDeque}};
+use std::{sync::{Arc, Mutex, mpsc::{Sender, Receiver, self}}};
 use anyhow::{anyhow, Ok};
-use common::packets;
-use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, InputDevices, InputCallbackInfo, OutputCallbackInfo, Stream, BuildStreamError};
+use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, Stream, BuildStreamError};
 use log::{debug, info, error, warn};
-use ringbuf::{RingBuffer, Consumer, Producer};
 
 use crate::latency::Latency;
-
-use super::OpusEncoder;
 
 pub struct AudioService {
   host: cpal::Host,
@@ -94,7 +90,7 @@ impl AudioService {
 
   fn make_output_stream(&mut self) -> Result<Stream, BuildStreamError> {
     let config = self.output_config.clone();
-    let mut rx = self.output_rx.clone();//.expect("output rx already taken. did you already call make_output_stream?");
+    let rx = self.output_rx.clone();//.expect("output rx already taken. did you already call make_output_stream?");
     let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
       {
         let rx = rx.lock().unwrap();
@@ -130,21 +126,19 @@ impl AudioServiceBuilder {
   }
 
   pub fn build(self) -> Result<AudioService, anyhow::Error> {
-    let output_device = self.output_device.or(Some(
-      self.host.default_output_device().ok_or(anyhow!("no output device available"))?
-    )).unwrap();
-    let input_device = self.input_device.or(Some(
-      self.host.default_input_device().ok_or(anyhow!("no input device available"))?
-    )).unwrap();
+    let output_device = self.output_device.unwrap_or(
+      self.host.default_output_device().ok_or_else(|| anyhow!("no output device available"))?
+    );
+    let input_device = self.input_device.unwrap_or(
+      self.host.default_input_device().ok_or_else(|| anyhow!("no input device available"))?
+    );
     info!("Output device: {:?}", output_device.name()?);
     info!("Input device: {:?}", input_device.name()?);
 
     let input_config: cpal::StreamConfig = input_device.default_input_config()?.into();
-    let input_sample_rate = input_config.sample_rate.0;
     debug!("Default input config: {:?}", input_config);
 
     let output_config: cpal::StreamConfig = output_device.default_output_config()?.into();
-    let output_sample_rate = output_config.sample_rate.0;
     debug!("Default output config: {:?}", output_config);
 
     info!("Input:");
