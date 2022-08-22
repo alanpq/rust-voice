@@ -128,7 +128,7 @@ fn main() -> Result<(), anyhow::Error> {
   let app_handle = {
     let pipe = pipe;
     std::thread::spawn(move || {
-      let app = app::App::new(pipe, client);
+      let mut app = app::App::new(pipe, client);
       app.run();
     })
   };

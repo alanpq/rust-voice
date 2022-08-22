@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{Mutex, Arc, mpsc::Sender}, time::{Instant, Duration}};
+use std::{collections::HashMap, sync::{Mutex, Arc, mpsc::Sender, atomic::{AtomicUsize, Ordering}}, time::{Instant, Duration}};
 
 use log::warn;
 use ringbuf::{Consumer, Producer, RingBuffer};
@@ -13,6 +13,8 @@ const EXPECTED_PEERS: usize = 4;
 pub struct PeerMixer {
   sample_rate: u32,
   latency: Latency,
+
+  peers: AtomicUsize,
 
   producer_map: Arc<Mutex<HashMap<u32, Producer<f32>>>>,
   consumer_map: Arc<Mutex<HashMap<u32, Consumer<f32>>>>,
@@ -29,6 +31,7 @@ impl PeerMixer {
     Self {
       sample_rate,
       latency,
+      peers: AtomicUsize::new(0),
       producer_map: Arc::new(Mutex::new(HashMap::with_capacity(EXPECTED_PEERS))),
       consumer_map: Arc::new(Mutex::new(HashMap::with_capacity(EXPECTED_PEERS))),
       decoder_map: Arc::new(Mutex::new(HashMap::with_capacity(EXPECTED_PEERS))),
@@ -44,6 +47,7 @@ impl PeerMixer {
       drop(decoders);
       self.add_peer(peer);
       decoders = self.decoder_map.lock().unwrap();
+      warn!("Lazy adding decoder for peer {}", peer);
     }
     let decoder = decoders.get_mut(&peer).expect("decoder not found");
     match decoder.decode(packet) {
@@ -99,6 +103,7 @@ impl PeerMixer {
     self.producer_map.lock().unwrap().insert(id, producer);
     self.consumer_map.lock().unwrap().insert(id, consumer);
     decoder_map.insert(id, decoder);
+    self.peers.fetch_add(1, Ordering::SeqCst);
   }
 
   // TODO: can probably pool these

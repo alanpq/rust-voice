@@ -2,7 +2,7 @@ use std::{sync::{atomic::{AtomicBool, Ordering}, Mutex, Arc, RwLock, MutexGuard}
 
 use flexi_logger::{writers::LogWriter, DeferredNow, Record};
 use log::{Log, info, error};
-use pancurses::{initscr, noecho, endwin, Input, resize_term, COLOR_PAIR, has_colors, start_color, A_NORMAL, A_BOLD};
+use pancurses::{initscr, noecho, endwin, Input, resize_term, COLOR_PAIR, has_colors, start_color, A_NORMAL, A_BOLD, half_delay};
 use ringbuf::{Producer, Consumer};
 
 use crate::client::Client;
@@ -73,6 +73,7 @@ pub struct App {
   running: AtomicBool,
   pipe: LogPipe,
   client: Arc<Client>,
+  server_addr: Option<String>,
 }
 
 const INVERT_OFFSET: u32 = 6;
@@ -91,6 +92,7 @@ impl App {
       running: AtomicBool::new(false),
       pipe,
       client,
+      server_addr: None,
     }
   }
 
@@ -142,14 +144,17 @@ impl App {
     scroll.clamp(0, records.len().saturating_sub(max_y as usize))
   }
 
-  fn draw_top_bar(&self, window: &pancurses::Window) {
+  fn draw_top_bar(&mut self, window: &pancurses::Window) {
     window.mv(0, 0);
-    match self.client.connected() {
-      true => {
+    match &self.server_addr {
+      Some(txt) => {
         window.attrset(COLOR_PAIR(3+INVERT_OFFSET) | A_BOLD);
-        window.addstr(format!(" Connected to {}", self.client.server_addr()));
+        window.addstr(txt);
       }, 
-      false => {
+      None => {
+        if self.client.connected() {
+          self.server_addr = Some(format!(" Connected to {}", self.client.server_addr()));
+        }
         window.attrset(COLOR_PAIR(INVERT_OFFSET) | A_BOLD);
         window.addstr(" Not connected");
       }
@@ -165,7 +170,7 @@ impl App {
     self.running.store(false, Ordering::SeqCst);
   }
 
-  pub fn run(&self) {
+  pub fn run(&mut self) {
     self.running.store(true, Ordering::SeqCst);
     let window = initscr();
     if has_colors() {
@@ -178,21 +183,20 @@ impl App {
 
     window.keypad(true);
     window.nodelay(true);
+    half_delay(1);
     noecho();
     let mut log_scroll = 0;
 
     let (h, w) = window.get_max_yx();
 
     let log_window = window.subwin(h - 1, (w as f32 * 0.75) as i32, 1, 0).unwrap();
-    log_window.setscrreg(1, 2);
-    log_window.scrollok(true);
 
     while self.running.load(Ordering::SeqCst) {
       window.attrset(COLOR_PAIR(0));
       self.draw_top_bar(&window);
       log_scroll = self.draw_logs(&log_window, log_scroll);
       log_window.border('|', '|', '=', '=', '+', '+', '+', '+');
-      log_window.touch();
+      // log_window.touch();
       match window.getch() {
         Some(Input::KeyMouse) => {
         }
