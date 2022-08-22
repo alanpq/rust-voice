@@ -36,7 +36,7 @@ impl OpusDecoder {
   pub fn decode(&mut self, packet: &[u8]) -> Result<Vec<f32>, anyhow::Error> {
     let mut decoder = self.decoder.lock().unwrap();
     let mut output = vec![0.0; self.frame_size];
-    decoder.decode_float(&packet[..], &mut output[..], false)?;
+    decoder.decode_float(packet, &mut output[..], false)?;
     Ok(output)
   }
 
