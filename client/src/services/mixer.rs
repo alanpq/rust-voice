@@ -41,8 +41,9 @@ impl PeerMixer {
   pub fn push(&self, peer: u32, packet: &[u8]) {
     let mut decoders = self.decoder_map.lock().unwrap();
     if !decoders.contains_key(&peer) {
-      warn!("pushing audio for non-existant peer! (peer {})", peer);
-      return;
+      drop(decoders);
+      self.add_peer(peer);
+      decoders = self.decoder_map.lock().unwrap();
     }
     let decoder = decoders.get_mut(&peer).expect("decoder not found");
     match decoder.decode(packet) {
