@@ -36,6 +36,10 @@ impl Client {
   }
 
   pub fn connected(&self) -> bool { self.connected }
+
+  pub fn server_addr(&self) -> String {
+    self.socket.peer_addr().unwrap().to_string()
+  }
   
   pub fn connect<A>(&mut self, addr: A) where A: ToSocketAddrs {
     self.socket.connect(addr).unwrap();

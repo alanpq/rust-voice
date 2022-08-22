@@ -5,6 +5,8 @@ use log::{Log, info, error};
 use pancurses::{initscr, noecho, endwin, Input, resize_term, COLOR_PAIR, has_colors, start_color, A_NORMAL, A_BOLD};
 use ringbuf::{Producer, Consumer};
 
+use crate::client::Client;
+
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct LogRecord {
@@ -70,8 +72,10 @@ impl LogWriter for LogPipe {
 pub struct App {
   running: AtomicBool,
   pipe: LogPipe,
+  client: Arc<Client>,
 }
 
+const INVERT_OFFSET: u32 = 6;
 const COLOR_TABLE: [i16; 6] = [
   pancurses::COLOR_WHITE,
   pancurses::COLOR_RED,
@@ -82,10 +86,11 @@ const COLOR_TABLE: [i16; 6] = [
 ];
 
 impl App {
-  pub fn new(pipe: LogPipe) -> Self {
+  pub fn new(pipe: LogPipe, client: Arc<Client>) -> Self {
     App {
       running: AtomicBool::new(false),
-      pipe
+      pipe,
+      client,
     }
   }
 
@@ -137,6 +142,25 @@ impl App {
     scroll.clamp(0, records.len().saturating_sub(max_y as usize))
   }
 
+  fn draw_top_bar(&self, window: &pancurses::Window) {
+    window.mv(0, 0);
+    match self.client.connected() {
+      true => {
+        window.attrset(COLOR_PAIR(3+INVERT_OFFSET) | A_BOLD);
+        window.addstr(format!(" Connected to {}", self.client.server_addr()));
+      }, 
+      false => {
+        window.attrset(COLOR_PAIR(INVERT_OFFSET) | A_BOLD);
+        window.addstr(" Not connected");
+      }
+    }
+    let max_x = window.get_max_x();
+    let cur_x = window.get_cur_x();
+    for i in cur_x..max_x {
+      window.mvaddch(0, i, ' ');
+    }
+  }
+
   pub fn stop(&self) {
     self.running.store(false, Ordering::SeqCst);
   }
@@ -149,6 +173,7 @@ impl App {
   }
     for (i, color) in COLOR_TABLE.iter().enumerate() {
       pancurses::init_pair(i as i16, *color, pancurses::COLOR_BLACK);
+      pancurses::init_pair((i as i16) + INVERT_OFFSET as i16, pancurses::COLOR_BLACK, *color);
     }
 
     window.keypad(true);
@@ -164,6 +189,7 @@ impl App {
 
     while self.running.load(Ordering::SeqCst) {
       window.attrset(COLOR_PAIR(0));
+      self.draw_top_bar(&window);
       log_scroll = self.draw_logs(&log_window, log_scroll);
       log_window.border('|', '|', '=', '=', '+', '+', '+', '+');
       log_window.touch();

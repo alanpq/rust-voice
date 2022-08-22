@@ -115,6 +115,7 @@ fn main() -> Result<(), anyhow::Error> {
   let client = Arc::new(client);
   let client_handle;
   {
+    let client = client.clone();
     let state = state.clone();
     client_handle = std::thread::spawn(move|| {
       client.service();
@@ -127,7 +128,7 @@ fn main() -> Result<(), anyhow::Error> {
   let app_handle = {
     let pipe = pipe;
     std::thread::spawn(move || {
-      let app = app::App::new(pipe);
+      let app = app::App::new(pipe, client);
       app.run();
     })
   };
