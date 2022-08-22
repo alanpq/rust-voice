@@ -1,8 +1,7 @@
 use std::sync::{Mutex, Arc};
-
 use log::info;
 
-use crate::util::nearest_opus_rate;
+use crate::util::opus::nearest_opus_rate;
 
 pub struct OpusDecoder {
   /// the real sample rate of the input

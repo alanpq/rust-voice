@@ -1,11 +1,9 @@
 use std::{collections::VecDeque, sync::{Mutex, Arc, mpsc::{Sender, self}}};
 
-use anyhow::anyhow;
-use crate::util::nearest_opus_rate;
 use common::packets;
 use log::{warn, info};
 
-
+use crate::util::opus::nearest_opus_rate;
 
 pub struct OpusEncoder {
   /// the real sample rate of the input
@@ -20,8 +18,6 @@ pub struct OpusEncoder {
 
   tx: Vec<Sender<Vec<u8>>>,
 }
-
-
 
 impl OpusEncoder {
   pub fn new(sample_rate: u32) -> Result<Self, anyhow::Error> {
