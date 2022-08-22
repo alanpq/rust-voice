@@ -28,4 +28,9 @@ impl OpusDecoder {
     decoder.decode_float(&packet[..], &mut output[..], false)?;
     Ok(output)
   }
+
+  pub fn reset(&self) {
+    let mut decoder = self.decoder.lock().unwrap();
+    decoder.reset_state();
+  }
 }

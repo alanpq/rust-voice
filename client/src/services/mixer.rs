@@ -84,6 +84,7 @@ impl PeerMixer {
     let mut decoder_map = self.decoder_map.lock().unwrap();
     if decoder_map.contains_key(&id) {
       warn!("peer {} already exists", id);
+      decoder_map.get_mut(&id).unwrap().reset();
       return;
     }
 
