@@ -9,6 +9,7 @@ use log::{info, error};
 use services::{AudioService, PeerMixer, OpusEncoder};
 use client::Client;
 use common::{packets::{ClientMessage, self}, UserInfo};
+use tracing::{span, Level};
 
 use crate::services::OpusDecoder;
 
@@ -51,8 +52,9 @@ fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<(u32, Vec<u8>)>,mic_t
     let input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
     let mut encoder = OpusEncoder::new(audio.out_config().sample_rate.0).expect("failed to create encoder");
     encoder.add_output(mic_tx);
-
+    let span = span!(Level::INFO, "audio_thread");
     while state.client_running.load(Ordering::SeqCst) {
+      let _span = span.enter();
       match peer_rx.try_recv() {
         Ok((id, packet)) => {
           mixer.push(id, &packet);
@@ -92,6 +94,16 @@ fn main() -> Result<(), anyhow::Error> {
     .log_to_writer(Box::new(pipe.clone()))
     .write_mode(WriteMode::Async)
     .start()?;
+
+  #[cfg(feature="trace")]
+  {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    tracing::subscriber::set_global_default(
+      tracing_subscriber::registry()
+          .with(tracing_tracy::TracyLayer::new()),
+    ).expect("set up the subscriber");
+  }
 
   let args = Args::parse();
 

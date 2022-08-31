@@ -3,6 +3,7 @@ use std::{net::{UdpSocket, ToSocketAddrs}, sync::{mpsc::{Sender, Receiver}, Arc,
 use common::{packets::{self, ServerMessage}, UserInfo};
 use crossbeam::channel;
 use log::{debug, info, error};
+use tracing::{span, Level};
 
 pub struct Client {
   username: String,
@@ -69,7 +70,9 @@ impl Client {
 
   pub fn service(&self) {
     self.socket.set_nonblocking(true).expect("Failed to set socket to non-blocking");
+    let span = span!(Level::INFO, "client service");
     loop {
+      let _span = span.enter();
       let mut buf = [0; packets::PACKET_MAX_SIZE];
       match self.socket.recv(&mut buf) {
         Ok(bytes) => self.recv(&buf[..bytes]),
