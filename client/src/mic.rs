@@ -6,7 +6,7 @@ use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use log::{info, error, warn};
 use ringbuf::{Producer, Consumer, RingBuffer};
 
-use crate::{util::opus::{OPUS_SAMPLE_RATES, nearest_opus_rate}, latency::Latency};
+use crate::{util::{opus::{OPUS_SAMPLE_RATES, nearest_opus_rate}, resampling::resample_audio}, latency::Latency};
 
 pub struct MicService {
   host: cpal::Host,
@@ -14,6 +14,8 @@ pub struct MicService {
   config: cpal::StreamConfig,
   stream: Option<cpal::Stream>,
   latency: Latency,
+
+  opus_rate: u32,
   
   frame_size: usize,
   tx: Arc<Mutex<Sender<Vec<u8>>>>,
@@ -40,6 +42,10 @@ impl MicService {
     let buffer = self.buffer.clone();
     let frame_size = self.frame_size;
     let tx = self.tx.clone();
+
+    let opus_rate = self.opus_rate;
+    let real_rate = self.config.sample_rate.0;
+
     self.stream = Some(self.device.build_input_stream(&self.config, move |data: &[f32], _: &cpal::InputCallbackInfo| {
       let mut buffer = buffer.lock().unwrap();
       for sample in data {
@@ -47,7 +53,10 @@ impl MicService {
       }
       if buffer.len() >= frame_size {
         let mut encoder = encoder.lock().unwrap();
-        let input = buffer.drain(..frame_size).collect::<Vec<f32>>();
+        let mut input = buffer.drain(..frame_size).collect::<Vec<f32>>();
+        if opus_rate != real_rate {
+          input = resample_audio(&input, real_rate, opus_rate);
+        }
         match encoder.encode_vec_float(&input, packets::PACKET_MAX_SIZE/2) {
           Ok(packet) => {
             let tx = tx.lock().unwrap();
@@ -115,11 +124,11 @@ impl MicServiceBuilder {
     }
 
     let opus_rate = nearest_opus_rate(config.sample_rate.0).unwrap();
-    let frame_size = (opus_rate * 20) as usize / 1000;
+    let frame_size = (config.sample_rate.0 * 20) as usize / 1000;
     info!("Creating new OpusEncoder with frame size {} @ opus:{} hz (real:{} hz)", frame_size, opus_rate, config.sample_rate.0);
     
     if opus_rate != config.sample_rate.0 {
-      warn!("Audio Resampling is not yet supported! Your audio will likely be distorted/pitched.");
+      warn!("Audio Resampling enabled.");
     }
     let encoder = opus::Encoder::new(opus_rate, opus::Channels::Mono, opus::Application::Voip)?;
 
@@ -131,6 +140,9 @@ impl MicServiceBuilder {
       config,
       stream: None,
       latency,
+
+      opus_rate,
+
       tx: Arc::new(Mutex::new(tx)),
       buffer: Arc::new(Mutex::new(VecDeque::new())),
       encoder: Arc::new(Mutex::new(encoder)),
