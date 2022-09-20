@@ -13,6 +13,7 @@ mod util;
 mod latency;
 mod client;
 mod cpal;
+mod decoder;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rust Voice Server")]
@@ -31,7 +32,7 @@ use kira::{manager::{
 use uuid::Uuid;
 use voice::{VoiceSoundData, VoiceSoundSettings};
 
-use crate::{client::Client, mic::MicService, voice::VoiceSoundHandle, cpal::CpalBackend};
+use crate::{client::Client, mic::MicService, voice::VoiceSoundHandle, cpal::CpalBackend, decoder::OpusDecoder};
 pub struct Peer {
   pub id: Uuid,
   
@@ -44,12 +45,13 @@ fn main() -> Result<(), anyhow::Error> {
   let mut manager = AudioManager::<CpalBackend>::new(AudioManagerSettings::default())?;
   let sound_map: Arc<Mutex<HashMap<Uuid, VoiceSoundHandle>>> = Arc::new(Mutex::new(HashMap::new()));
   let producer_map: Arc<Mutex<HashMap<Uuid, Producer<f32>>>> = Arc::new(Mutex::new(HashMap::new()));
+  let decoder_map: Arc<Mutex<HashMap<Uuid, OpusDecoder>>> = Arc::new(Mutex::new(HashMap::new()));
 
-  let (mut mic_service, consumer) = MicService::builder().with_latency(100.).build()?;
+  let (mut mic_service, rx) = MicService::builder().with_latency(100.).build()?;
 
   let latency = mic_service.latency();
 
-  let mut client = Client::new("test".to_owned(), consumer)?;
+  let mut client = Client::new("test".to_owned(), rx)?;
   
   let addr: SocketAddr = format!("{}:{}", args.address, args.port).parse()?;
   client.connect(addr)?;
@@ -67,11 +69,16 @@ fn main() -> Result<(), anyhow::Error> {
         }
         let mut producer_map = producer_map.lock().unwrap();
         producer_map.insert(id, producer);
+        let mut decoder_map = decoder_map.lock().unwrap();
+        decoder_map.insert(id, OpusDecoder::new(48000).unwrap());
         let sound = VoiceSoundData::new(VoiceSoundSettings {volume: Volume::Amplitude(0.5), ..Default::default()}, consumer);
         manager.play(sound).unwrap()
       });
-      let mut producer_map = producer_map.lock().unwrap();
-      producer_map.get_mut(&id).unwrap().push_slice(&data);
+      let mut decoder_map = decoder_map.lock().unwrap();
+      if let Ok(data) = decoder_map.get_mut(&id).unwrap().decode(&data) {
+        let mut producer_map = producer_map.lock().unwrap();
+        producer_map.get_mut(&id).unwrap().push_slice(&data);
+      }
     }));
   }
 

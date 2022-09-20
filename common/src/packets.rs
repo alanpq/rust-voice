@@ -12,7 +12,7 @@ pub enum ClientMessage {
   Connect { username: String },
   Ping,
   /// send voice to the server
-  Voice { samples: Vec<f32> },
+  Voice { samples: Vec<u8> },
 }
 
 impl ClientMessage {
@@ -31,7 +31,7 @@ pub enum ServerMessage {
   /// a user connected
   Connected (UserInfo),
   /// voice packet from a user
-  Voice { user: Uuid, samples: Vec<f32> },
+  Voice { user: Uuid, samples: Vec<u8> },
 }
 
 impl ServerMessage {

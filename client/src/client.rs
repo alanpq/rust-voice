@@ -1,4 +1,4 @@
-use std::net::{UdpSocket, ToSocketAddrs};
+use std::{net::{UdpSocket, ToSocketAddrs}, sync::mpsc::Receiver};
 
 use common::packets::{self, ServerMessage};
 use log::{debug, info, error};
@@ -16,24 +16,24 @@ pub enum ClientState {
 
 const PACKET_MAX_SIZE: usize = 1024;
 
-pub type OnVoiceCB = dyn FnMut(Uuid, Vec<f32>) + Send + Sync;
+pub type OnVoiceCB = dyn FnMut(Uuid, Vec<u8>) + Send + Sync;
 
 pub struct Client {
   username: String,
   socket: UdpSocket,
   state: ClientState,
-  mic_consumer: Consumer<f32>,
+  mic_rx: Receiver<Vec<u8>>,
   on_voice_cb: Option<Box<OnVoiceCB>>,
 }
 
 impl Client {
-  pub fn new(username: String, mic_consumer: Consumer<f32>) -> Result<Self, anyhow::Error> {
+  pub fn new(username: String, mic_rx: Receiver<Vec<u8>>) -> Result<Self, anyhow::Error> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     Ok(Self {
       username,
       socket,
       state: ClientState::Disconnected,
-      mic_consumer,
+      mic_rx,
       on_voice_cb: None,
     })
   }
@@ -77,12 +77,15 @@ impl Client {
         None => {},
         _ => { return Err(anyhow!("Unexpected packet received")); },
       };
-      if self.mic_consumer.len() >= 20 {
-        let mut samples = vec![0.0; 20];
-        let bytes = self.mic_consumer.pop_slice(&mut samples);
-        assert_eq!(bytes, 20);
-        self.send(packets::ClientMessage::Voice { samples })?;
+      if let Ok(packet) = self.mic_rx.try_recv() {
+        self.send(packets::ClientMessage::Voice { samples: packet })?;
       }
+      // if self.mic_rx.() >= 20 {
+      //   let mut samples = vec![0; 20];
+      //   let bytes = self.mic_rx.pop_slice(&mut samples);
+      //   assert_eq!(bytes, 20);
+      //   self.send(packets::ClientMessage::Voice { samples })?;
+      // }
     }
   }
 
