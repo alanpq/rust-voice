@@ -13,6 +13,7 @@ pub struct MicService {
   config: cpal::StreamConfig,
   stream: Option<cpal::Stream>,
   producer: Arc<Mutex<Producer<f32>>>,
+  latency: Latency,
 }
 
 fn error(err: cpal::StreamError) {
@@ -22,6 +23,10 @@ fn error(err: cpal::StreamError) {
 impl MicService {
   pub fn builder() -> MicServiceBuilder {
     MicServiceBuilder::new()
+  }
+
+  pub fn latency(&self) -> Latency {
+    self.latency
   }
 
   pub fn start(&mut self) -> Result<(), anyhow::Error> {
@@ -74,6 +79,10 @@ impl MicServiceBuilder {
     }.unwrap_or(device.default_input_config()?.into());
 
     let latency = Latency::new(self.latency_ms, config.sample_rate.0, config.channels);
+    
+    info!("Input:");
+    info!(" - Channels: {}", config.channels);
+    info!(" - Sample Rate: {}", config.sample_rate.0);
 
     let ring = RingBuffer::new(latency.samples() * 2);
     let (mut producer, consumer) = ring.split();
@@ -87,6 +96,7 @@ impl MicServiceBuilder {
       config,
       stream: None,
       producer: Arc::new(Mutex::new(producer)),
+      latency,
     }, consumer))
   }
 }

@@ -4,6 +4,7 @@ use clap::Parser;
 use env_logger::Env;
 
 use log::{info, error};
+use ringbuf::{Producer, RingBuffer};
 use tracing::{span, Level};
 
 mod voice;
@@ -11,6 +12,7 @@ mod mic;
 mod util;
 mod latency;
 mod client;
+mod cpal;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rust Voice Server")]
@@ -25,13 +27,11 @@ struct Args {
 
 use kira::{manager::{
   AudioManager, AudioManagerSettings,
-  backend::cpal::CpalBackend,
 }, sound::Sound, dsp::Frame, Volume};
 use uuid::Uuid;
 use voice::{VoiceSoundData, VoiceSoundSettings};
 
-use crate::{client::Client, mic::MicService, voice::VoiceSoundHandle};
-
+use crate::{client::Client, mic::MicService, voice::VoiceSoundHandle, cpal::CpalBackend};
 pub struct Peer {
   pub id: Uuid,
   
@@ -42,10 +42,12 @@ fn main() -> Result<(), anyhow::Error> {
   let args = Args::parse();
   
   let mut manager = AudioManager::<CpalBackend>::new(AudioManagerSettings::default())?;
-
-  let mut sound_map: Arc<Mutex<HashMap<Uuid, VoiceSoundHandle>>> = Arc::new(Mutex::new(HashMap::new()));
+  let sound_map: Arc<Mutex<HashMap<Uuid, VoiceSoundHandle>>> = Arc::new(Mutex::new(HashMap::new()));
+  let producer_map: Arc<Mutex<HashMap<Uuid, Producer<f32>>>> = Arc::new(Mutex::new(HashMap::new()));
 
   let (mut mic_service, consumer) = MicService::builder().with_latency(100.).build()?;
+
+  let latency = mic_service.latency();
 
   let mut client = Client::new("test".to_owned(), consumer)?;
   
@@ -53,13 +55,23 @@ fn main() -> Result<(), anyhow::Error> {
   client.connect(addr)?;
 
   {
-    let sound_map = sound_map.clone();
+    // let sound_map = sound_map.clone();
+    // let producer_map = producer_map.clone();
     client.on_voice(Box::new(move |id, data| {
       let mut sound_map = sound_map.lock().unwrap();
-      sound_map.entry(id).or_insert_with(|| {
-        let sound = VoiceSoundData::new(VoiceSoundSettings {volume: Volume::Amplitude(0.5), ..Default::default()});
+      let e = sound_map.entry(id).or_insert_with(|| {
+        let ring = RingBuffer::new(latency.samples()*2);
+        let (mut producer, consumer) = ring.split();
+        for _ in 0..latency.samples() {
+          producer.push(0.0).unwrap();
+        }
+        let mut producer_map = producer_map.lock().unwrap();
+        producer_map.insert(id, producer);
+        let sound = VoiceSoundData::new(VoiceSoundSettings {volume: Volume::Amplitude(0.5), ..Default::default()}, consumer);
         manager.play(sound).unwrap()
       });
+      let mut producer_map = producer_map.lock().unwrap();
+      producer_map.get_mut(&id).unwrap().push_slice(&data);
     }));
   }
 
