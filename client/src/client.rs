@@ -1,4 +1,4 @@
-use std::{net::{UdpSocket, ToSocketAddrs}, sync::mpsc::Receiver};
+use std::{net::{UdpSocket, ToSocketAddrs}, sync::mpsc::Receiver, collections::VecDeque};
 
 use common::packets::{self, ServerMessage};
 use log::{debug, info, error};
@@ -16,17 +16,17 @@ pub enum ClientState {
 
 const PACKET_MAX_SIZE: usize = 1024;
 
-pub type OnVoiceCB = dyn FnMut(Uuid, Vec<u8>) + Send + Sync;
-
+pub type OnVoiceCB = dyn Fn(Uuid, Vec<u8>) -> Result<(), anyhow::Error> + Send + Sync;
+pub type OnDisconnect = dyn FnMut(Uuid) -> Result<(), anyhow::Error> + Send + Sync;
 pub struct Client {
   username: String,
   socket: UdpSocket,
   state: ClientState,
   mic_rx: Receiver<Vec<u8>>,
-  on_voice_cb: Option<Box<OnVoiceCB>>,
 }
 
 impl Client {
+
   pub fn new(username: String, mic_rx: Receiver<Vec<u8>>) -> Result<Self, anyhow::Error> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     Ok(Self {
@@ -34,12 +34,7 @@ impl Client {
       socket,
       state: ClientState::Disconnected,
       mic_rx,
-      on_voice_cb: None,
     })
-  }
-
-  pub fn on_voice(&mut self, on_voice: Box<OnVoiceCB>) {
-    self.on_voice_cb = Some(on_voice);
   }
 
   pub fn connect<A>(&mut self, addr: A) -> Result<(), anyhow::Error> where A: ToSocketAddrs {
@@ -62,31 +57,12 @@ impl Client {
     Ok(())
   }
 
-  pub fn run(&mut self) -> Result<(), anyhow::Error> {
-    loop {
-      let pack = self.recv_packet()?;
-      match pack {
-        Some(ServerMessage::Connected(user)) => {
-          info!("{} connected", &user.username);
-        },
-        Some(ServerMessage::Voice { user, samples }) => {
-          if let Some(ref mut on_voice) = self.on_voice_cb {
-            on_voice(user, samples);
-          }
-        },
-        None => {},
-        _ => { return Err(anyhow!("Unexpected packet received")); },
-      };
-      if let Ok(packet) = self.mic_rx.try_recv() {
-        self.send(packets::ClientMessage::Voice { samples: packet })?;
-      }
-      // if self.mic_rx.() >= 20 {
-      //   let mut samples = vec![0; 20];
-      //   let bytes = self.mic_rx.pop_slice(&mut samples);
-      //   assert_eq!(bytes, 20);
-      //   self.send(packets::ClientMessage::Voice { samples })?;
-      // }
+  pub fn poll(&mut self) -> Result<Option<ServerMessage>, anyhow::Error> {
+    let pack = self.recv_packet()?;
+    if let Ok(packet) = self.mic_rx.try_recv() {
+      self.send(packets::ClientMessage::Voice { samples: packet })?;
     }
+    Ok(pack)
   }
 
   fn recv_packet(&self) -> Result<Option<ServerMessage>, anyhow::Error> {

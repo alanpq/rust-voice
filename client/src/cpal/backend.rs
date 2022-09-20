@@ -22,6 +22,13 @@ enum State {
 /// connect a [`Renderer`] to the operating system's audio driver.
 pub struct CpalBackend {
 	state: State,
+	sample_rate: u32,
+}
+
+impl CpalBackend {
+	pub fn sample_rate(&self) -> u32 {
+		self.sample_rate
+	}
 }
 
 impl Backend for CpalBackend {
@@ -40,6 +47,7 @@ impl Backend for CpalBackend {
 		Ok((
 			Self {
 				state: State::Uninitialized { device, config },
+				sample_rate,
 			},
 			sample_rate,
 		))
