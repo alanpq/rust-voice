@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 serde = {version = "1", features = ["derive"]}
 bincode = "1"
+
+uuid = {version = "1.1.2", features = ["serde", "v4"]}

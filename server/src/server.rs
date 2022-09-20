@@ -2,13 +2,14 @@ use std::{net::{UdpSocket, SocketAddr}, collections::{LinkedList, HashMap}, sync
 
 use common::{packets::{self, ClientMessage, ServerMessage}, UserInfo};
 use log::{info, debug, error, warn};
+use uuid::Uuid;
 
 use crate::config::ServerConfig;
 
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct User {
-  pub id: u32,
+  pub id: Uuid,
   pub username: String,
   pub addr: SocketAddr,
   pub last_reply: Instant,
@@ -67,14 +68,13 @@ impl Server {
           return;
         }
         let mut users = self.users.lock().unwrap();
-        let count = users.len();
         let user = User {
-          id: count as u32,
+          id: Uuid::new_v4(),
           username: username.clone(),
           addr,
           last_reply: Instant::now(),
         };
-        info!("'{}' ({}) connected", &username, count);
+        info!("'{}' ({}) connected", &username, users.len());
         // TODO: change response from pong to something more important
         self.send(addr, ServerMessage::Pong).unwrap();
         for u in users.values() {

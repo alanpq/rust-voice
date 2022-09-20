@@ -1,23 +1,16 @@
-use std::{sync::{Arc, Mutex, mpsc::{channel, Sender, Receiver}, atomic::{AtomicBool, Ordering}, RwLock}, net::SocketAddr, time::Duration, thread::JoinHandle};
-use app::LogPipe;
-use clap::Parser;
+use std::{io::stdin, net::{UdpSocket, SocketAddr}, collections::HashMap, sync::{Mutex, Arc}};
 
-use crossbeam::channel::{TryRecvError, self};
-use flexi_logger::{Logger, WriteMode};
-use latency::Latency;
+use clap::Parser;
+use env_logger::Env;
+
 use log::{info, error};
-use services::{AudioService, PeerMixer, OpusEncoder};
-use client::Client;
-use common::{packets::{ClientMessage, self}, UserInfo};
 use tracing::{span, Level};
 
-use crate::services::OpusDecoder;
-
-mod services;
-mod client;
-mod latency;
+mod voice;
+mod mic;
 mod util;
-mod app;
+mod latency;
+mod client;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rust Voice Server")]
@@ -30,125 +23,56 @@ struct Args {
   latency: f32,
 }
 
-struct SharedState {
-  pub args: Args,
-  pub client_running: AtomicBool,
-  pub peer_connect_rx: channel::Receiver<UserInfo>,
-}
+use kira::{manager::{
+  AudioManager, AudioManagerSettings,
+  backend::cpal::CpalBackend,
+}, sound::Sound, dsp::Frame, Volume};
+use uuid::Uuid;
+use voice::{VoiceSoundData, VoiceSoundSettings};
 
-fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<(u32, Vec<u8>)>,mic_tx: Sender<Vec<u8>>) -> JoinHandle<()> {
-  std::thread::spawn(move || {
-    let mut audio = AudioService::builder()
-      .with_latency(state.args.latency)
-      .build().unwrap();
+use crate::{client::Client, mic::MicService, voice::VoiceSoundHandle};
 
-    let mixer = PeerMixer::new(
-      audio.out_config().sample_rate.0,
-      audio.out_latency(),
-      audio.get_output_tx()
-    );
-    audio.start().unwrap();
-
-    let input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
-    let mut encoder = OpusEncoder::new(audio.out_config().sample_rate.0).expect("failed to create encoder");
-    encoder.add_output(mic_tx);
-    let span = span!(Level::INFO, "audio_thread");
-    while state.client_running.load(Ordering::SeqCst) {
-      let _span = span.enter();
-      match peer_rx.try_recv() {
-        Ok((id, packet)) => {
-          mixer.push(id, &packet);
-        }
-        Err(e) => {
-          if e != std::sync::mpsc::TryRecvError::Empty {
-            error!("Error receiving packet: {}", e);
-          }
-        }
-      }
-      if let Ok(sample) = input_consumer.try_recv() {
-        encoder.push(sample);
-      }
-      {
-        match state.peer_connect_rx.try_recv() {
-          Ok(info) => {
-            mixer.add_peer(info.id);
-          },
-          Err(e) if e != TryRecvError::Empty => {
-            error!("Error receiving peer connections: {}", e);
-          }
-          _ => {}
-      }
-        mixer.tick();
-
-      }
-    }
-
-    audio.stop();
-
-  })
+pub struct Peer {
+  pub id: Uuid,
+  
 }
 
 fn main() -> Result<(), anyhow::Error> {
-  let pipe = LogPipe::new();
-  Logger::try_with_str("info")?
-    .log_to_writer(Box::new(pipe.clone()))
-    .write_mode(WriteMode::Async)
-    .start()?;
-
-  #[cfg(feature="trace")]
-  {
-    use tracing_subscriber::layer::SubscriberExt;
-
-    tracing::subscriber::set_global_default(
-      tracing_subscriber::registry()
-          .with(tracing_tracy::TracyLayer::new()),
-    ).expect("set up the subscriber");
-  }
-
+  env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
   let args = Args::parse();
-
-  let addr = format!("{}:{}", args.address, args.port)
-    .parse::<SocketAddr>().expect("Invalid server address.");
-
-  let (mic_tx, mic_rx) = channel::<Vec<u8>>();
-  let (peer_tx, peer_rx) = channel::<(u32, Vec<u8>)>();
-
-  let mut client = Client::new("test".to_string(), mic_rx, peer_tx);
-  client.connect(addr);
-  let peer_connect_rx = client.get_peer_connected_rx();
-
-
-  let state = Arc::new(SharedState {
-    args,
-    client_running: AtomicBool::new(true),
-    peer_connect_rx,
-  });
   
-  let client = Arc::new(client);
-  let client_handle;
+  let mut manager = AudioManager::<CpalBackend>::new(AudioManagerSettings::default())?;
+
+  let mut sound_map: Arc<Mutex<HashMap<Uuid, VoiceSoundHandle>>> = Arc::new(Mutex::new(HashMap::new()));
+
+  let (mut mic_service, consumer) = MicService::builder().with_latency(100.).build()?;
+
+  let mut client = Client::new("test".to_owned(), consumer)?;
+  
+  let addr: SocketAddr = format!("{}:{}", args.address, args.port).parse()?;
+  client.connect(addr)?;
+
   {
-    let client = client.clone();
-    let state = state.clone();
-    client_handle = std::thread::spawn(move|| {
-      client.service();
-      state.client_running.store(false, Ordering::SeqCst);
-    });
+    let sound_map = sound_map.clone();
+    client.on_voice(Box::new(move |id, data| {
+      let mut sound_map = sound_map.lock().unwrap();
+      sound_map.entry(id).or_insert_with(|| {
+        let sound = VoiceSoundData::new(VoiceSoundSettings {volume: Volume::Amplitude(0.5), ..Default::default()});
+        manager.play(sound).unwrap()
+      });
+    }));
   }
 
-  let audio_handle = audio_thread(state, peer_rx, mic_tx);
+  mic_service.start()?;
 
-  let app_handle = {
-    let pipe = pipe;
-    std::thread::spawn(move || {
-      let mut app = app::App::new(pipe, client);
-      app.run();
-    })
-  };
+  client.run()?;
 
-  client_handle.join().unwrap();
-  audio_handle.join().unwrap();
-  app_handle.join().unwrap();
+  // let mut voice = VoiceSoundData { settings: VoiceSoundSettings::default() };
+  // voice.settings.volume = Volume::Amplitude(0.4);
+  // manager.play(voice)?;
   
+  println!("Press enter to exit.");
+  stdin().read_line(&mut "".into())?;
   
   Ok(())
 }
