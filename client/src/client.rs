@@ -90,7 +90,7 @@ impl Client {
     let mut buf = [0; 1024];
     match self.socket.recv(&mut buf) {
       Ok(size) => {
-        debug!("Received {} bytes", size);
+        // debug!("Received {} bytes", size);
         let packet = packets::ServerMessage::from_bytes(&buf[..size])
           .ok_or_else(|| anyhow!("Failed to parse packet"))?;
         Ok(Some(packet))
@@ -108,7 +108,7 @@ impl Client {
   pub fn send(&self, command: packets::ClientMessage) -> Result<(), anyhow::Error> {
     let packet = bincode::serialize(&command)?;
     self.socket.send(&packet)?;
-    debug!("-> {} bytes", packet.len());
+    // debug!("-> {} bytes", packet.len());
     Ok(())
   }
 }
