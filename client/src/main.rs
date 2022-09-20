@@ -1,10 +1,12 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::{atomic::{AtomicBool, Ordering}, Arc}};
 
 use app::App;
 use clap::Parser;
 use env_logger::Env;
 
 use log::{info, error};
+
+use ctrlc;
 
 mod voice;
 mod mic;
@@ -26,25 +28,27 @@ struct Args {
   latency: f32,
 }
 
-use kira::{manager::{
-  AudioManager, AudioManagerSettings,
-}, sound::Sound, dsp::Frame, Volume};
-use uuid::Uuid;
-use voice::{VoiceSoundData, VoiceSoundSettings};
-
-use crate::{client::Client, mic::MicService, voice::VoiceSoundHandle, cpal::CpalBackend, decoder::OpusDecoder};
-
 fn main() -> Result<(), anyhow::Error> {
   env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
   let args = Args::parse();
+
+  let running = Arc::new(AtomicBool::new(true));
+
+  {
+    let running = running.clone();
+    ctrlc::set_handler(move || {
+      running.store(false, Ordering::SeqCst);
+    })?;
+  }
 
   let mut app = App::new("test".to_string(), args.latency)?;
   
   let addr: SocketAddr = format!("{}:{}", args.address, args.port).parse()?;
   app.start(addr)?;
-  loop {
+  while running.load(Ordering::Relaxed) {
     app.poll()?;
   }
+  app.stop();
   
   Ok(())
 }

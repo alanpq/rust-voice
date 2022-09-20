@@ -71,6 +71,10 @@ impl MicService {
     self.stream.as_ref().unwrap().play()?;
     Ok(())
   }
+
+  pub fn stop(&mut self) {
+    drop(self.stream.take());
+  }
 }
 
 

@@ -60,6 +60,11 @@ impl App {
     Ok(())
   }
 
+  pub fn stop(&mut self) {
+    self.client.disconnect();
+    self.mic_service.stop();
+  }
+
   pub fn poll(&mut self) -> Result<Option<ServerMessage>, anyhow::Error> {
     let msg = self.client.poll()?;
     match msg {
@@ -72,12 +77,30 @@ impl App {
             info!("'{}' has joined.", user.username);
             self.create_peer(user.id)?;
           },
+          ServerMessage::Disconnected(user, reason) => {
+            info!("'{}' has left ({:?}).", user.username, reason);
+            self.remove_peer(user.id)?;
+          },
           ServerMessage::Pong => {},
         }
       },
       None => {}
     }
     Ok(msg)
+  }
+
+  fn remove_peer(&self, id: Uuid) -> Result<(), anyhow::Error> {
+    let mut sound_map = self.sound_map.lock().unwrap();
+    let mut producer_map = self.producer_map.lock().unwrap();
+    let mut decoder_map = self.decoder_map.lock().unwrap();
+
+    if let Some(sound) = sound_map.remove(&id) {
+      // TODO: do something with the handle?
+    }
+    producer_map.remove(&id);
+    decoder_map.remove(&id);
+
+    Ok(())
   }
 
   fn create_peer(&self, id: Uuid) -> Result<(), anyhow::Error> {

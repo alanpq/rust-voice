@@ -40,6 +40,7 @@ impl Client {
   pub fn connect<A>(&mut self, addr: A) -> Result<(), anyhow::Error> where A: ToSocketAddrs {
     let addr = addr.to_socket_addrs()?.next().ok_or_else(|| anyhow!("invalid address"))?;
     info!("Connecting to {:?}...", addr);
+    self.state = ClientState::Connecting;
     self.socket.connect(addr)?;
     self.send(packets::ClientMessage::Connect { username: self.username.clone() })?;
 
@@ -55,6 +56,11 @@ impl Client {
     };
     self.socket.set_nonblocking(true)?;
     Ok(())
+  }
+
+  pub fn disconnect(&mut self) {
+    self.send(packets::ClientMessage::Disconnect).unwrap();
+    self.state = ClientState::Disconnected;
   }
 
   pub fn poll(&mut self) -> Result<Option<ServerMessage>, anyhow::Error> {

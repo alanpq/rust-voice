@@ -1,6 +1,6 @@
 use std::{net::{UdpSocket, SocketAddr}, collections::{LinkedList, HashMap}, sync::{Arc, Mutex}, time::Instant};
 
-use common::{packets::{self, ClientMessage, ServerMessage}, UserInfo};
+use common::{packets::{self, ClientMessage, ServerMessage, LeaveReason}, UserInfo};
 use log::{info, debug, error, warn};
 use uuid::Uuid;
 
@@ -85,6 +85,15 @@ impl Server {
         drop(users);
         self.broadcast(ServerMessage::Connected (user.info()), Some(addr));
       },
+      ClientMessage::Disconnect => {
+        if let Some(user) = user {
+          let mut users = self.users.lock().unwrap();
+          users.remove(&addr);
+          info!("'{}' ({}) disconnected", &user.username, users.len());
+          drop(users);
+          self.broadcast(ServerMessage::Disconnected(user.info(), LeaveReason::Disconnect), None);
+        }
+      },
       ClientMessage::Ping => {
         if user.is_none() {return;}
         self.send(addr, ServerMessage::Pong).unwrap();
@@ -138,10 +147,17 @@ impl Server {
               if Instant::now().duration_since(last_heartbeat) <= self.config.heartbeat_interval { continue; }
               last_heartbeat = Instant::now();
               let mut users = self.users.lock().unwrap();
-              let user_count = users.len();
-              users.retain(|_, user| user.last_reply.elapsed() < self.config.timeout);
-              if users.len() < user_count { // did we lose users
-                info!("{} users lost connection. ({} users connected)", user_count - users.len(), users.len());
+
+              let mut to_remove = Vec::new();
+              for (addr, user) in users.iter() {
+                if user.last_reply.elapsed() >= self.config.timeout {
+                  info!("'{}' timed out.", user.username);
+                  self.broadcast(ServerMessage::Disconnected(user.info(), LeaveReason::Timeout), None);
+                  to_remove.push(*addr);
+                }
+              }
+              for addr in to_remove {
+                users.remove(&addr);
               }
             }
             _ => {
