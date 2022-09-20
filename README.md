@@ -6,4 +6,4 @@ Rust VoIP implementation over UDP.
 - [ ] Packet/Voice encryption
 
 ## Known Bugs/Issues
-- Having >1 peer currently causes audio issues (regression from refactor).
+- None :)
