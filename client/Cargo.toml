@@ -12,10 +12,28 @@ clap = { version = "3.2.17", features = ["derive"]}
 cpal = "0.13.5"
 anyhow = "1.0.62"
 ringbuf = "0.2.8"
+crossbeam = "0.8.2"
 opus = "0.3.0"
 
 serde = {version = "1", features = ["derive"]}
 bincode = "1"
 
+uuid = {version = "1.1.2", features = ["serde"]}
+
 log = "0.4.17"
 env_logger = "0.9.0"
+
+kira = "0.7.0"
+
+ctrlc = "3.2.3"
+
+pancurses = "0.17.0"
+
+tracing = {version = "0.1.36"}
+tracing-subscriber = {version = "0.3.15"}
+tracing-tracy = {git = "https://github.com/nagisa/rust_tracy_client.git", branch = "main", optional = true}
+tracy-client = {git = "https://github.com/nagisa/rust_tracy_client.git", branch = "main", optional = true}
+
+[features]
+default = ["trace"]
+trace = ["tracing-tracy", "tracy-client"]

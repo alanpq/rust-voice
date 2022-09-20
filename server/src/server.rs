@@ -1,17 +1,27 @@
 use std::{net::{UdpSocket, SocketAddr}, collections::{LinkedList, HashMap}, sync::{Arc, Mutex}, time::Instant};
 
-use common::packets::{self, ClientMessage, ServerMessage};
-use log::{info, debug, error};
+use common::{packets::{self, ClientMessage, ServerMessage, LeaveReason}, UserInfo};
+use log::{info, debug, error, warn};
+use uuid::Uuid;
 
 use crate::config::ServerConfig;
 
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct User {
-  pub id: u32,
+  pub id: Uuid,
   pub username: String,
   pub addr: SocketAddr,
   pub last_reply: Instant,
+}
+
+impl User {
+  pub fn info(&self) -> UserInfo {
+    UserInfo {
+      id: self.id,
+      username: self.username.clone(),
+    }
+  }
 }
 
 pub struct Server {
@@ -31,9 +41,10 @@ impl Server {
     }
   }
 
+
   pub fn start(&mut self) {
     if self.running {
-      println!("Server already running");
+      warn!("Server already running");
       return;
     }
 
@@ -57,17 +68,31 @@ impl Server {
           return;
         }
         let mut users = self.users.lock().unwrap();
-        let count = users.len();
-        users.insert(addr, User {
-          id: count as u32,
+        let user = User {
+          id: Uuid::new_v4(),
           username: username.clone(),
           addr,
           last_reply: Instant::now(),
-        });
+        };
+        info!("'{}' ({}) connected", &username, users.len());
         // TODO: change response from pong to something more important
         self.send(addr, ServerMessage::Pong).unwrap();
-        info!("'{}' ({}) connected", &username, count);
+        for u in users.values() {
+          self.send(user.addr, ServerMessage::Connected(u.info())).unwrap();
+        }
+        users.insert(addr, user.clone());
         info!("{} users connected", users.len());
+        drop(users);
+        self.broadcast(ServerMessage::Connected (user.info()), Some(addr));
+      },
+      ClientMessage::Disconnect => {
+        if let Some(user) = user {
+          let mut users = self.users.lock().unwrap();
+          users.remove(&addr);
+          info!("'{}' ({}) disconnected", &user.username, users.len());
+          drop(users);
+          self.broadcast(ServerMessage::Disconnected(user.info(), LeaveReason::Disconnect), None);
+        }
       },
       ClientMessage::Ping => {
         if user.is_none() {return;}
@@ -122,10 +147,17 @@ impl Server {
               if Instant::now().duration_since(last_heartbeat) <= self.config.heartbeat_interval { continue; }
               last_heartbeat = Instant::now();
               let mut users = self.users.lock().unwrap();
-              let user_count = users.len();
-              users.retain(|_, user| user.last_reply.elapsed() < self.config.timeout);
-              if users.len() < user_count { // did we lose users
-                info!("{} users lost connection. ({} users connected)", user_count - users.len(), users.len());
+
+              let mut to_remove = Vec::new();
+              for (addr, user) in users.iter() {
+                if user.last_reply.elapsed() >= self.config.timeout {
+                  info!("'{}' timed out.", user.username);
+                  self.broadcast(ServerMessage::Disconnected(user.info(), LeaveReason::Timeout), None);
+                  to_remove.push(*addr);
+                }
+              }
+              for addr in to_remove {
+                users.remove(&addr);
               }
             }
             _ => {

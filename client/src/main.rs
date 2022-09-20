@@ -1,13 +1,21 @@
-use std::{sync::{Arc, Mutex, mpsc::channel, atomic::{AtomicBool, Ordering}}, net::SocketAddr};
-use clap::Parser;
+use std::{net::SocketAddr, sync::{atomic::{AtomicBool, Ordering}, Arc}};
 
-use audio::AudioService;
-use client::Client;
-use common::packets::ClientMessage;
+use app::App;
+use clap::Parser;
 use env_logger::Env;
 
-mod audio;
+use log::{info, error};
+
+use ctrlc;
+
+mod voice;
+mod mic;
+mod util;
+mod latency;
 mod client;
+mod cpal;
+mod decoder;
+mod app;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rust Voice Server")]
@@ -20,53 +28,27 @@ struct Args {
   latency: f32,
 }
 
-
 fn main() -> Result<(), anyhow::Error> {
   env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-
   let args = Args::parse();
 
-  let addr = format!("{}:{}", args.address, args.port)
-    .parse::<SocketAddr>().expect("Invalid server address.");
-
-  let (mic_tx, mic_rx) = channel::<Vec<u8>>();
-  let (peer_tx, peer_rx) = channel::<(u32, Vec<u8>)>();
-
-  let mut client = Client::new("test".to_string(), mic_rx, peer_tx);
-  client.connect(addr);
-
-  let client_arc = Arc::new(Mutex::new(client));
-
-  let handle;
-  {
-    let client_arc = client_arc.clone();
-    handle = std::thread::spawn(move|| {
-      client_arc.lock().unwrap().service();
-    });
-  }
-
-  let audio_running_lock = Arc::new(Mutex::new(()));
-  let audio_guard = audio_running_lock.lock().unwrap();
+  let running = Arc::new(AtomicBool::new(true));
 
   {
-    let audio_running_lock = audio_running_lock.clone();
-    std::thread::spawn(move || {
-      let mut audio = AudioService::builder()
-        .with_channels(mic_tx, peer_rx)
-        .with_latency(args.latency)
-        .build().unwrap();
-      audio.start().unwrap();
-
-      let _ = audio_running_lock.lock().unwrap(); // this will hang until the lock is released
-      
-      audio.stop();
-
-    });
+    let running = running.clone();
+    ctrlc::set_handler(move || {
+      running.store(false, Ordering::SeqCst);
+    })?;
   }
 
-  handle.join().unwrap();
-  drop(audio_guard); // release the mutex, allowing the audio thread to finish
+  let mut app = App::new("test".to_string(), args.latency)?;
   
+  let addr: SocketAddr = format!("{}:{}", args.address, args.port).parse()?;
+  app.start(addr)?;
+  while running.load(Ordering::Relaxed) {
+    app.poll()?;
+  }
+  app.stop();
   
   Ok(())
 }

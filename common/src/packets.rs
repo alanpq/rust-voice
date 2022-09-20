@@ -1,12 +1,18 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::UserInfo;
 
 pub const PACKET_MAX_SIZE: usize = 4000;
 
 #[derive(Clone)]
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ClientMessage {
+  /// request to connect to a server
   Connect { username: String },
+  Disconnect,
   Ping,
+  /// send voice to the server
   Voice { samples: Vec<u8> },
 }
 
@@ -19,11 +25,25 @@ impl ClientMessage {
   }
 }
 
+#[derive(Copy, Clone)]
+#[derive(Debug, Serialize, Deserialize)]
+pub enum LeaveReason {
+  Unknown,
+  Disconnect,
+  Kicked,
+  Timeout,
+}
+
 #[derive(Clone)]
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ServerMessage {
   Pong,
-  Voice { user: u32, samples: Vec<u8> },
+  /// a user connected
+  Connected (UserInfo),
+  /// a user disconnected
+  Disconnected (UserInfo, LeaveReason),
+  /// voice packet from a user
+  Voice { user: Uuid, samples: Vec<u8> },
 }
 
 impl ServerMessage {

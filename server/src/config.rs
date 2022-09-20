@@ -14,7 +14,7 @@ impl ServerConfig {
   pub fn new() -> Self {
     Self {
       port: 8080,
-      timeout: Duration::from_secs(3),
+      timeout: Duration::from_secs(100),
       heartbeat_interval: Duration::from_secs(1),
     }
   }
