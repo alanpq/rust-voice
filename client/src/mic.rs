@@ -44,11 +44,11 @@ impl MicService {
     let tx = self.tx.clone();
 
     let opus_rate = self.opus_rate;
+    let channels = self.config.channels as usize;
     let real_rate = self.config.sample_rate.0;
-
     self.stream = Some(self.device.build_input_stream(&self.config, move |data: &[f32], _: &cpal::InputCallbackInfo| {
       let mut buffer = buffer.lock().unwrap();
-      for sample in data {
+      for sample in data.iter().step_by(channels as usize) {
         buffer.push_back(*sample);
       }
       if buffer.len() >= frame_size {
