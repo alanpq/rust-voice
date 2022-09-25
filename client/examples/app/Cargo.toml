@@ -1,0 +1,8 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ctrlc = "3.2.3"
+clap = { version = "3.2.17", features = ["derive"]}

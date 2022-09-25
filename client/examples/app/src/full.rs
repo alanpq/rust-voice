@@ -1,21 +1,7 @@
 use std::{net::SocketAddr, sync::{atomic::{AtomicBool, Ordering}, Arc}};
 
-use app::App;
 use clap::Parser;
-use env_logger::Env;
-
-use log::{info, error};
-
-use ctrlc;
-
-mod voice;
-mod mic;
-mod util;
-mod latency;
-mod client;
-mod cpal;
-mod decoder;
-mod app;
+use client::App;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rust Voice Server")]
@@ -29,7 +15,6 @@ struct Args {
 }
 
 fn main() -> Result<(), anyhow::Error> {
-  env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
   let args = Args::parse();
 
   let running = Arc::new(AtomicBool::new(true));
