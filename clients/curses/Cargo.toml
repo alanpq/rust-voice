@@ -1,12 +1,12 @@
 [package]
-name = "client"
+name = "curses"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-common = { path = "../common" }
+common = { path = "../../common" }
 clap = { version = "3.2.17", features = ["derive"]}
 
 cpal = "0.13.5"

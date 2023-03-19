@@ -209,28 +209,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "clap",
- "common",
- "cpal",
- "crossbeam",
- "flexi_logger",
- "log",
- "opus",
- "pancurses",
- "ringbuf",
- "serde",
- "tracing",
- "tracing-subscriber",
- "tracing-tracy",
- "tracy-client",
-]
-
-[[package]]
 name = "cmake"
 version = "0.1.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -374,6 +352,28 @@ checksum = "51887d4adc7b564537b15adcfb307936f8075dfcd5f00dde9a9f1d29383682bc"
 dependencies = [
  "cfg-if",
  "once_cell",
+]
+
+[[package]]
+name = "curses"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "clap",
+ "common",
+ "cpal",
+ "crossbeam",
+ "flexi_logger",
+ "log",
+ "opus",
+ "pancurses",
+ "ringbuf",
+ "serde",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-tracy",
+ "tracy-client",
 ]
 
 [[package]]
