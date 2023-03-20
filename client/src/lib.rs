@@ -4,6 +4,7 @@ use ringbuf::HeapRb;
 
 pub mod playback;
 pub mod microphone;
+pub mod packet;
 
 mod opus;
 
