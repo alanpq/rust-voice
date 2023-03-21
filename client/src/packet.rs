@@ -1,8 +1,14 @@
 use std::{cmp::Ordering};
 
+use crate::PeerID;
+
 #[repr(transparent)]
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct SeqNum(u16);
+
+impl SeqNum {
+  pub const MAX: Self = SeqNum(u16::MAX);
+}
 
 impl From<u16> for SeqNum {
   fn from(value: u16) -> Self {
@@ -40,7 +46,7 @@ mod tests {
   fn greater_than<S: Into<SeqNum>>(a: S, b: S, greater_than: bool) {
     let (a,b): (SeqNum, SeqNum) = (a.into(), b.into());
     assert_eq!(a > b, greater_than);
-    // assert_eq!(a < b, !greater_than);
+    assert_eq!(a < b, !greater_than);
   }
 
   #[test]
@@ -55,8 +61,9 @@ mod tests {
 
 // FIXME: everything is f32 for now
 pub struct AudioPacket<T = f32> { 
-  seq_num: SeqNum,
-  data: Vec<T>,
+  pub seq_num: SeqNum,
+  pub peer_id: PeerID,
+  pub data: Vec<T>,
 }
 
 impl PartialEq for AudioPacket {

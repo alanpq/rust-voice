@@ -6,7 +6,12 @@ pub mod playback;
 pub mod microphone;
 pub mod packet;
 
+pub mod mixer;
+
 mod opus;
+
+pub type PeerID = u8; // max 256 peers
+pub const MAX_PEERS: usize = u8::MAX as usize;
 
 pub fn audio_thread() -> std::thread::JoinHandle<()> {
   std::thread::spawn(move || {
