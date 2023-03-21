@@ -8,7 +8,7 @@ use latency::Latency;
 use log::{info, error};
 use services::{AudioService, PeerMixer, OpusEncoder};
 use client::Client;
-use common::{packets::{ClientMessage, self}, UserInfo};
+use common::{packets::{ClientMessage, self, AudioPacket}, UserInfo};
 use tracing::{span, Level};
 
 use crate::services::OpusDecoder;
@@ -36,7 +36,7 @@ struct SharedState {
   pub peer_connect_rx: channel::Receiver<UserInfo>,
 }
 
-fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<(u32, Vec<u8>)>,mic_tx: Sender<Vec<u8>>) -> JoinHandle<()> {
+fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<AudioPacket<u8>>,mic_tx: Sender<Vec<u8>>) -> JoinHandle<()> {
   std::thread::spawn(move || {
     let mut audio = AudioService::builder()
       .with_latency(state.args.latency)
@@ -56,8 +56,8 @@ fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<(u32, Vec<u8>)>,mic_t
     while state.client_running.load(Ordering::SeqCst) {
       let _span = span.enter();
       match peer_rx.try_recv() {
-        Ok((id, packet)) => {
-          mixer.push(id, &packet);
+        Ok(packet) => {
+          mixer.push(packet.peer_id.into(), &packet.data);
         }
         Err(e) => {
           if e != std::sync::mpsc::TryRecvError::Empty {
@@ -111,7 +111,7 @@ fn main() -> Result<(), anyhow::Error> {
     .parse::<SocketAddr>().expect("Invalid server address.");
 
   let (mic_tx, mic_rx) = channel::<Vec<u8>>();
-  let (peer_tx, peer_rx) = channel::<(u32, Vec<u8>)>();
+  let (peer_tx, peer_rx) = channel::<AudioPacket<u8>>();
 
   let mut client = Client::new("test".to_string(), mic_rx, peer_tx);
   client.connect(addr);

@@ -1,8 +1,9 @@
 use std::{sync::{atomic::{AtomicUsize, Ordering}, Mutex, Arc}, collections::VecDeque};
 
+use common::{MAX_PEERS, PeerID};
 use log::{warn, error};
 
-use crate::{packet::{SeqNum, AudioPacket}, PeerID, MAX_PEERS};
+use common::{packets::{SeqNum, AudioPacket}};
 
 type Peer<T> = (SeqNum, VecDeque<T>);
 

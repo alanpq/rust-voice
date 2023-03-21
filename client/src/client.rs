@@ -1,9 +1,10 @@
-use std::{net::{UdpSocket, ToSocketAddrs}, sync::{mpsc::{Sender, Receiver}, Arc, Mutex}, time::Instant};
+use std::{net::{UdpSocket, ToSocketAddrs}, sync::{Mutex, Arc}};
 
-use common::{packets::{self, ServerMessage, AudioPacket}, UserInfo};
-use crossbeam::channel;
-use log::{debug, info, error};
-use tracing::{span, Level};
+use common::{UserInfo, packets::{self, ServerMessage, AudioPacket}};
+use crossbeam::channel::{Receiver, Sender, self, TryRecvError};
+
+use common::PeerID;
+use log::{info, error, debug};
 
 pub struct Client {
   username: String,
@@ -11,7 +12,7 @@ pub struct Client {
   connected: bool,
 
   mic_rx: Arc<Mutex<Receiver<Vec<u8>>>>,
-  peer_tx: Arc<Mutex<Sender<AudioPacket<u8>>>>,
+  peer_tx: Sender<AudioPacket<u8>>,
 
   peer_connected_tx: channel::Sender<UserInfo>,
   peer_connected_rx: channel::Receiver<UserInfo>,
@@ -25,7 +26,7 @@ impl Client {
       socket: UdpSocket::bind("0.0.0.0:0").unwrap(),
       connected: false,
       mic_rx: Arc::new(Mutex::new(mic_rx)),
-      peer_tx: Arc::new(Mutex::new(peer_tx)),
+      peer_tx,
 
       peer_connected_tx,
       peer_connected_rx,
@@ -70,9 +71,7 @@ impl Client {
 
   pub fn service(&self) {
     self.socket.set_nonblocking(true).expect("Failed to set socket to non-blocking");
-    let span = span!(Level::INFO, "client service");
     loop {
-      let _span = span.enter();
       let mut buf = [0; packets::PACKET_MAX_SIZE];
       match self.socket.recv(&mut buf) {
         Ok(bytes) => self.recv(&buf[..bytes]),
@@ -87,7 +86,7 @@ impl Client {
               self.send(packets::ClientMessage::Voice { samples });
             }
             Err(e) => {
-              if e == std::sync::mpsc::TryRecvError::Empty { continue; }
+              if e == TryRecvError::Empty { continue; }
               error!("Failed to receive samples: {}", e);
               break;
             }
@@ -102,7 +101,7 @@ impl Client {
     let command = packets::ServerMessage::from_bytes(buf).expect("Invalid packet from server.");
     match command {
       ServerMessage::Voice(packet) => {
-        self.peer_tx.lock().unwrap().send(packet).unwrap();
+        self.peer_tx.send(packet).unwrap();
       },
       ServerMessage::Connected (info) => {
         info!("{} connected.", info.username);

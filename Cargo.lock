@@ -254,8 +254,11 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "clap 4.1.11",
+ "common",
  "cpal 0.15.1",
+ "crossbeam",
  "env_logger 0.10.0",
  "log",
  "ringbuf 0.3.2",
