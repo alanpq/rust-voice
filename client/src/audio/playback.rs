@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use cpal::{traits::{DeviceTrait, StreamTrait, HostTrait}, StreamConfig};
 
-use log::{error, info, debug};
+use log::{error, info, debug, warn};
 use ringbuf::{HeapConsumer, HeapProducer};
 use anyhow::{anyhow, bail};
 
@@ -40,9 +40,14 @@ pub fn make_stream(
   let mut consumer = consumer.into_postponed();
   let channels = config.channels as usize;
   let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+    let mut warned = false;
     // debug!("{}/{} = {}", data.len(), channels, data.len()/channels);
     for i in 0..data.len()/channels {
       // currently input is mono, so we copy data for each channel
+      if consumer.is_empty() && !warned {
+        warn!("not enough playback!");
+        warned = true;
+      }
       let sample = consumer.pop().unwrap_or(0.0);
       for j in 0..channels {
         data[i*channels + j] = sample;

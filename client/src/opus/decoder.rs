@@ -16,7 +16,8 @@ pub struct OpusDecoder {
 impl OpusDecoder {
   pub fn new(sample_rate: u32) -> Result<Self, anyhow::Error> {
     let opus_rate = nearest_opus_rate(sample_rate).unwrap();
-    let frame_size = (opus_rate * 20) as usize / 1000;
+    let frame_size = (opus_rate * 40) as usize / 1000;
+    // (48000 * 2.5 * 10) / 1000
     info!("Creating new OpusDecoder with frame size {} @ opus:{} hz (real:{} hz)", frame_size, opus_rate, sample_rate);
     
     if opus_rate != sample_rate {

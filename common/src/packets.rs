@@ -12,7 +12,7 @@ pub enum ClientMessage {
   Connect { username: String },
   Ping,
   /// send voice to the server
-  Voice { seq_num: SeqNum, samples: Vec<f32> },
+  Voice { seq_num: SeqNum, samples: Vec<u8> },
 }
 
 impl ClientMessage {
@@ -31,7 +31,7 @@ pub enum ServerMessage {
   /// a user connected
   Connected (UserInfo),
   /// voice packet from a user
-  Voice(AudioPacket<f32>),
+  Voice(AudioPacket<u8>),
 }
 
 impl ServerMessage {
@@ -43,7 +43,7 @@ impl ServerMessage {
   }
 }
 
-use std::{cmp::Ordering, ops};
+use std::{cmp::Ordering, ops, fmt::Display};
 
 #[repr(transparent)]
 #[derive(PartialEq, Clone, Copy)]
@@ -52,6 +52,12 @@ pub struct SeqNum(pub u16);
 
 impl SeqNum {
   pub const MAX: Self = SeqNum(u16::MAX);
+}
+
+impl Display for SeqNum {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.0.fmt(f)
+  }
 }
 
 impl From<u16> for SeqNum {
@@ -64,14 +70,14 @@ impl ops::Add for SeqNum {
   type Output = Self;
 
   fn add(self, rhs: Self) -> Self::Output {
-    Self(self.0 + rhs.0)
+    Self(self.0.wrapping_add(rhs.0))
   }
 }
 impl ops::Add<u16> for SeqNum {
   type Output = Self;
 
   fn add(self, rhs: u16) -> Self::Output {
-    Self(self.0 + rhs)
+    Self(self.0.wrapping_add(rhs))
   }
 }
 impl ops::AddAssign for SeqNum {
@@ -136,7 +142,7 @@ pub struct AudioPacket<T = f32> {
   pub data: Vec<T>,
 }
 
-pub const FRAME_SIZE: usize = 2048;
+pub const FRAME_SIZE: usize = 1920;
 #[derive(Copy, Clone, Debug)]
 pub struct AudioFrame<T = f32> where T: Copy {
   pub seq_num: SeqNum,

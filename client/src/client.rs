@@ -16,15 +16,15 @@ pub struct Client {
   socket: UdpSocket,
   connected: bool,
 
-  mic_rx: Receiver<ClientAudioPacket<f32>>,
-  peer_tx: Sender<AudioPacket<f32>>,
+  mic_rx: Receiver<ClientAudioPacket<u8>>,
+  peer_tx: Sender<AudioPacket<u8>>,
 
   peer_connected_tx: channel::Sender<UserInfo>,
   peer_connected_rx: channel::Receiver<UserInfo>,
 }
 
 impl Client {
-  pub fn new(username: String, mic_rx: Receiver<ClientAudioPacket<f32>>, peer_tx: Sender<AudioPacket<f32>>) -> Self {
+  pub fn new(username: String, mic_rx: Receiver<ClientAudioPacket<u8>>, peer_tx: Sender<AudioPacket<u8>>) -> Self {
     let (peer_connected_tx, peer_connected_rx) = channel::unbounded();
     Self {
       username,
@@ -88,6 +88,7 @@ impl Client {
           match self.mic_rx.try_recv() {
             Ok(pak) => {
               // info!("sending voice packet");
+              debug!("-> ({}) {} bytes", pak.seq_num, pak.data.len());
               self.send(packets::ClientMessage::Voice{seq_num: pak.seq_num, samples: pak.data});
             }
             Err(e) => {

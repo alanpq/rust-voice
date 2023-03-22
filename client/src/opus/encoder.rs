@@ -22,7 +22,7 @@ pub struct OpusEncoder {
 impl OpusEncoder {
   pub fn new(sample_rate: u32) -> Result<Self, anyhow::Error> {
     let opus_rate = nearest_opus_rate(sample_rate).unwrap();
-    let frame_size = (opus_rate * 20) as usize / 1000;
+    let frame_size = (opus_rate * 40) as usize / 1000;
     info!("Creating new OpusEncoder with frame size {} @ opus:{} hz (real:{} hz)", frame_size, opus_rate, sample_rate);
     
     if opus_rate != sample_rate {
@@ -48,9 +48,9 @@ impl OpusEncoder {
   //   self.tx.push(tx);
   // }
 
-  pub fn push(&mut self, sample: f32) -> Option<Vec<u8>> {
+  pub fn push(&mut self, data: &[f32]) -> Option<Vec<u8>> {
     let mut buffer = self.buffer.lock().unwrap();
-    buffer.push_back(sample);
+    buffer.extend(data);
 
     if buffer.len() >= self.frame_size {
       let mut encoder = self.encoder.lock().unwrap();

@@ -7,7 +7,7 @@ pub mod packet;
 
 pub mod mixer;
 
-mod opus;
+pub mod opus;
 
 pub mod client;
 
