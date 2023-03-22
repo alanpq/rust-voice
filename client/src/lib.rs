@@ -2,8 +2,7 @@ mod latency;
 pub use latency::*;
 use ringbuf::HeapRb;
 
-pub mod playback;
-pub mod microphone;
+pub mod audio;
 pub mod packet;
 
 pub mod mixer;

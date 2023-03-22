@@ -1,6 +1,6 @@
 use std::{time::{Duration, Instant}, sync::Arc};
 
-use client::{Latency, mixer::{self, Mixer}, client::ClientAudioPacket};
+use client::{Latency, mixer::{self, Mixer}, client::ClientAudioPacket, audio};
 use common::packets::{AudioPacket, SeqNum};
 use cpal::traits::{HostTrait, StreamTrait, DeviceTrait};
 use anyhow::anyhow;
@@ -18,7 +18,7 @@ fn setup_playback(host: &cpal::Host, latency_ms: f32) -> anyhow::Result<(HeapPro
     .ok_or_else(|| anyhow!("could not get output device"))?;
   info!(" - Device: {:?}", device.name()?);
   let config: cpal::StreamConfig = device.default_output_config()?.into();
-  let config = client::playback::get_config(&device)?;
+  let config = audio::playback::get_config(&device)?;
   debug!(" - Config: {:?}", config);
 
   let latency = client::Latency::new(latency_ms, config.sample_rate.0, config.channels);
@@ -27,7 +27,7 @@ fn setup_playback(host: &cpal::Host, latency_ms: f32) -> anyhow::Result<(HeapPro
   info!(" - Latency: {} samples", latency.samples());
 
   let (prod, cons) = client::make_buffer(latency).split();
-  let stream = client::playback::make_stream(&device, &config, cons)?;
+  let stream = audio::playback::make_stream(&device, &config, cons)?;
 
   stream.play()?;
 
@@ -40,7 +40,7 @@ fn setup_mic(host: &cpal::Host, latency_ms: f32) -> anyhow::Result<(HeapConsumer
     .ok_or_else(|| anyhow!("could not get input device"))?;
   info!(" - Device: {:?}", device.name()?);
   // let config: cpal::StreamConfig = device.default_input_config()?.into();
-  let config = client::microphone::get_config(&device)?;
+  let config = audio::microphone::get_config(&device)?;
   debug!(" - Config: {:?}", config);
 
   let latency = client::Latency::new(latency_ms, config.sample_rate.0, config.channels);
@@ -49,7 +49,7 @@ fn setup_mic(host: &cpal::Host, latency_ms: f32) -> anyhow::Result<(HeapConsumer
   info!(" - Latency: {} samples", latency.samples());
 
   let (prod, cons) = client::make_buffer(latency).split();
-  let stream = client::microphone::make_stream(&device, &config, prod)?;
+  let stream = audio::microphone::make_stream(&device, &config, prod)?;
 
   stream.play()?;
 

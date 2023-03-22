@@ -261,6 +261,7 @@ dependencies = [
  "crossbeam",
  "env_logger 0.10.0",
  "log",
+ "opus",
  "ringbuf 0.3.2",
 ]
 
