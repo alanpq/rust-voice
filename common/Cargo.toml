@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 serde = {version = "1", features = ["derive"]}
 bincode = "1"
+log = "0.4.17"

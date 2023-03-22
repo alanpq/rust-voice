@@ -1,6 +1,6 @@
 use std::{net::{UdpSocket, SocketAddr}, collections::{LinkedList, HashMap}, sync::{Arc, Mutex}, time::Instant};
 
-use common::{packets::{self, ClientMessage, ServerMessage}, UserInfo};
+use common::{packets::{self, ClientMessage, ServerMessage, AudioPacket}, UserInfo};
 use log::{info, debug, error, warn};
 
 use crate::config::ServerConfig;
@@ -89,9 +89,15 @@ impl Server {
         if user.is_none() {return;}
         self.send(addr, ServerMessage::Pong).unwrap();
       },
-      ClientMessage::Voice { samples } => {
+      ClientMessage::Voice { seq_num, samples } => {
         if user.is_none() {return;}
-        self.broadcast(ServerMessage::Voice { user: user.unwrap().id, samples }, Some(addr));
+        let user = user.unwrap();
+        self.broadcast(ServerMessage::Voice(AudioPacket {
+          seq_num,
+          peer_id: user.id as u8,
+          data: samples,
+          
+        }), None);//, Some(addr));
         // self.broadcast(ServerMessage::Voice { user: user.unwrap().id, samples }, None);
       },
       _ => {}

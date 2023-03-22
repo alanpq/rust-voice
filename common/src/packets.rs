@@ -1,8 +1,9 @@
+use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::{UserInfo, PeerID};
 
-pub const PACKET_MAX_SIZE: usize = 4000;
+pub const PACKET_MAX_SIZE: usize = 32_768;
 
 #[derive(Clone)]
 #[derive(Debug, Serialize, Deserialize)]
@@ -11,7 +12,7 @@ pub enum ClientMessage {
   Connect { username: String },
   Ping,
   /// send voice to the server
-  Voice { samples: Vec<u8> },
+  Voice { seq_num: SeqNum, samples: Vec<f32> },
 }
 
 impl ClientMessage {
@@ -30,7 +31,7 @@ pub enum ServerMessage {
   /// a user connected
   Connected (UserInfo),
   /// voice packet from a user
-  Voice(AudioPacket<u8>),
+  Voice(AudioPacket<f32>),
 }
 
 impl ServerMessage {
@@ -42,12 +43,12 @@ impl ServerMessage {
   }
 }
 
-use std::{cmp::Ordering};
+use std::{cmp::Ordering, ops};
 
 #[repr(transparent)]
 #[derive(PartialEq, Clone, Copy)]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SeqNum(u16);
+pub struct SeqNum(pub u16);
 
 impl SeqNum {
   pub const MAX: Self = SeqNum(u16::MAX);
@@ -56,6 +57,31 @@ impl SeqNum {
 impl From<u16> for SeqNum {
   fn from(value: u16) -> Self {
     Self(value)
+  }
+}
+
+impl ops::Add for SeqNum {
+  type Output = Self;
+
+  fn add(self, rhs: Self) -> Self::Output {
+    Self(self.0 + rhs.0)
+  }
+}
+impl ops::Add<u16> for SeqNum {
+  type Output = Self;
+
+  fn add(self, rhs: u16) -> Self::Output {
+    Self(self.0 + rhs)
+  }
+}
+impl ops::AddAssign for SeqNum {
+  fn add_assign(&mut self, rhs: Self) {
+    self.0 += rhs.0   
+  }
+}
+impl ops::AddAssign<u16> for SeqNum {
+  fn add_assign(&mut self, rhs: u16) {
+    self.0 += rhs   
   }
 }
 
@@ -108,6 +134,52 @@ pub struct AudioPacket<T = f32> {
   pub seq_num: SeqNum,
   pub peer_id: PeerID,
   pub data: Vec<T>,
+}
+
+pub const FRAME_SIZE: usize = 2048;
+#[derive(Copy, Clone, Debug)]
+pub struct AudioFrame<T = f32> where T: Copy {
+  pub seq_num: SeqNum,
+  pub data: [T; FRAME_SIZE],
+}
+
+impl<T: ops::AddAssign + Copy> ops::AddAssign for AudioFrame<T> {
+  fn add_assign(&mut self, rhs: Self) {
+    for i in 0..self.data.len() {
+      self.data[i] += rhs.data[i];
+    }
+  }
+}
+impl PartialEq for AudioFrame {
+  fn eq(&self, other: &Self) -> bool {
+    self.seq_num == other.seq_num
+  }
+}
+
+impl Eq for AudioFrame {}
+
+impl Ord for AudioFrame {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self.seq_num.cmp(&other.seq_num)
+  }
+}
+
+impl PartialOrd for AudioFrame {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+
+impl TryFrom<AudioPacket> for AudioFrame {
+  type Error = bool;
+
+  fn try_from(value: AudioPacket) -> Result<Self, Self::Error> {
+    Ok(AudioFrame {
+      seq_num: value.seq_num,
+      data: value.data[..PACKET_MAX_SIZE.min(value.data.len())].try_into().map_err(|v: _| false)?,
+    })
+  }
 }
 
 impl PartialEq for AudioPacket {

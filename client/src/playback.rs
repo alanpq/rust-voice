@@ -39,7 +39,6 @@ pub fn make_stream(
 ) -> Result<cpal::Stream, cpal::BuildStreamError> {
   let mut consumer = consumer.into_postponed();
   let channels = config.channels as usize;
-  debug!("making stream...");
   let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
     // debug!("{}/{} = {}", data.len(), channels, data.len()/channels);
     for i in 0..data.len()/channels {
@@ -51,6 +50,5 @@ pub fn make_stream(
     }
     consumer.sync(); // postpone sync to avoid sync on every individual sample pop
   };
-  debug!("making stream... fr fr");
   device.build_output_stream(config, data_fn, error_fn, None)
 }

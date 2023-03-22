@@ -1,31 +1,36 @@
 use std::{net::{UdpSocket, ToSocketAddrs}, sync::{Mutex, Arc}};
 
-use common::{UserInfo, packets::{self, ServerMessage, AudioPacket}};
+use common::{UserInfo, packets::{self, ServerMessage, AudioPacket, SeqNum}};
 use crossbeam::channel::{Receiver, Sender, self, TryRecvError};
 
 use common::PeerID;
 use log::{info, error, debug};
+
+pub struct ClientAudioPacket<T> {
+  pub seq_num: SeqNum,
+  pub data: Vec<T>
+}
 
 pub struct Client {
   username: String,
   socket: UdpSocket,
   connected: bool,
 
-  mic_rx: Arc<Mutex<Receiver<Vec<u8>>>>,
-  peer_tx: Sender<AudioPacket<u8>>,
+  mic_rx: Receiver<ClientAudioPacket<f32>>,
+  peer_tx: Sender<AudioPacket<f32>>,
 
   peer_connected_tx: channel::Sender<UserInfo>,
   peer_connected_rx: channel::Receiver<UserInfo>,
 }
 
 impl Client {
-  pub fn new(username: String, mic_rx: Receiver<Vec<u8>>, peer_tx: Sender<AudioPacket<u8>>) -> Self {
+  pub fn new(username: String, mic_rx: Receiver<ClientAudioPacket<f32>>, peer_tx: Sender<AudioPacket<f32>>) -> Self {
     let (peer_connected_tx, peer_connected_rx) = channel::unbounded();
     Self {
       username,
       socket: UdpSocket::bind("0.0.0.0:0").unwrap(),
       connected: false,
-      mic_rx: Arc::new(Mutex::new(mic_rx)),
+      mic_rx,
       peer_tx,
 
       peer_connected_tx,
@@ -80,10 +85,10 @@ impl Client {
             error!("Failed to receive packet: {}", e);
             break;
           }
-          match self.mic_rx.lock().unwrap().try_recv() {
-            Ok(samples) => {
+          match self.mic_rx.try_recv() {
+            Ok(pak) => {
               // info!("sending voice packet");
-              self.send(packets::ClientMessage::Voice { samples });
+              self.send(packets::ClientMessage::Voice{seq_num: pak.seq_num, samples: pak.data});
             }
             Err(e) => {
               if e == TryRecvError::Empty { continue; }
@@ -116,7 +121,7 @@ impl Client {
   pub fn send(&self, command: packets::ClientMessage) {
     let packet = bincode::serialize(&command).unwrap();
     self.socket.send(&packet).unwrap();
-    debug!("-> {} bytes", packet.len());
+    // debug!("-> {} bytes", packet.len());
   }
 
   
