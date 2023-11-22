@@ -71,6 +71,7 @@ impl Client {
   pub fn service(&self) {
     self.socket.set_nonblocking(true).expect("Failed to set socket to non-blocking");
     let span = span!(Level::INFO, "client service");
+    let mut seq_num = packets::SeqNum(0);
     loop {
       let _span = span.enter();
       let mut buf = [0; packets::PACKET_MAX_SIZE];
@@ -84,7 +85,7 @@ impl Client {
           match self.mic_rx.lock().unwrap().try_recv() {
             Ok(samples) => {
               // info!("sending voice packet");
-              self.send(packets::ClientMessage::Voice { samples });
+              self.send(packets::ClientMessage::Voice { seq_num, samples });
             }
             Err(e) => {
               if e == std::sync::mpsc::TryRecvError::Empty { continue; }
