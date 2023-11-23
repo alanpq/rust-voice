@@ -38,53 +38,57 @@ struct SharedState {
 
 fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<AudioPacket<u8>>,mic_tx: Sender<Vec<u8>>) -> JoinHandle<()> {
   std::thread::spawn(move || {
-    let mut audio = AudioService::builder()
-      .with_latency(state.args.latency)
-      .build().unwrap();
+    let go = move || {
+        let mut audio = AudioService::builder()
+          .with_latency(state.args.latency)
+          .build()?;
+        let mixer = PeerMixer::new(
+          audio.out_config().sample_rate.0,
+          audio.out_latency(),
+          audio.get_output_tx()
+        );
+        audio.start()?;
 
-    let mixer = PeerMixer::new(
-      audio.out_config().sample_rate.0,
-      audio.out_latency(),
-      audio.get_output_tx()
-    );
-    audio.start().unwrap();
+        let input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
+        let mut encoder = OpusEncoder::new(audio.out_config().sample_rate.0).expect("failed to create encoder");
+        encoder.add_output(mic_tx);
+        let span = span!(Level::INFO, "audio_thread");
+        while state.client_running.load(Ordering::SeqCst) {
+          let _span = span.enter();
+          match peer_rx.try_recv() {
+            Ok(packet) => {
+              mixer.push(packet.peer_id.into(), &packet.data);
+            }
+            Err(e) => {
+              if e != std::sync::mpsc::TryRecvError::Empty {
+                error!("Error receiving packet: {}", e);
+              }
+            }
+          }
+          if let Ok(sample) = input_consumer.try_recv() {
+            encoder.push(sample);
+          }
+          {
+            match state.peer_connect_rx.try_recv() {
+              Ok(info) => {
+                mixer.add_peer(info.id);
+              },
+              Err(e) if e != TryRecvError::Empty => {
+                error!("Error receiving peer connections: {}", e);
+              }
+              _ => {}
+          }
+            mixer.tick();
 
-    let input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
-    let mut encoder = OpusEncoder::new(audio.out_config().sample_rate.0).expect("failed to create encoder");
-    encoder.add_output(mic_tx);
-    let span = span!(Level::INFO, "audio_thread");
-    while state.client_running.load(Ordering::SeqCst) {
-      let _span = span.enter();
-      match peer_rx.try_recv() {
-        Ok(packet) => {
-          mixer.push(packet.peer_id.into(), &packet.data);
-        }
-        Err(e) => {
-          if e != std::sync::mpsc::TryRecvError::Empty {
-            error!("Error receiving packet: {}", e);
           }
         }
-      }
-      if let Ok(sample) = input_consumer.try_recv() {
-        encoder.push(sample);
-      }
-      {
-        match state.peer_connect_rx.try_recv() {
-          Ok(info) => {
-            mixer.add_peer(info.id);
-          },
-          Err(e) if e != TryRecvError::Empty => {
-            error!("Error receiving peer connections: {}", e);
-          }
-          _ => {}
-      }
-        mixer.tick();
 
-      }
+        audio.stop();
+        Ok::<(), anyhow::Error>(())
+    };
+    if let Err(e) = go() {
+        error!("[Audio] {e:?}");
     }
-
-    audio.stop();
-
   })
 }
 
@@ -145,10 +149,7 @@ fn main() -> Result<(), anyhow::Error> {
     })
   };
 
-  client_handle.join().unwrap();
-  audio_handle.join().unwrap();
   app_handle.join().unwrap();
-  
   
   Ok(())
 }
