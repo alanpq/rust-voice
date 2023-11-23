@@ -1,8 +1,8 @@
-use std::{sync::{atomic::{AtomicBool, Ordering}, Mutex, Arc, RwLock, MutexGuard}, io::Write, ops::AddAssign};
+use std::{sync::{atomic::{AtomicBool, Ordering}, Mutex, Arc, RwLock, MutexGuard}, io::{Write, self}, ops::AddAssign, time::Duration};
 
+use crossterm::{terminal, QueueableCommand, cursor, style::{self, Stylize as _, Color}, event::{read, poll, Event, KeyEvent, KeyCode}, ExecutableCommand as _};
 use flexi_logger::{writers::LogWriter, DeferredNow, Record};
 use log::{Log, info, error};
-use pancurses::{initscr, noecho, endwin, Input, resize_term, COLOR_PAIR, has_colors, start_color, A_NORMAL, A_BOLD, half_delay};
 use ringbuf::{Producer, Consumer};
 
 use crate::client::Client;
@@ -76,16 +76,6 @@ pub struct App {
   server_addr: Option<String>,
 }
 
-const INVERT_OFFSET: u32 = 6;
-const COLOR_TABLE: [i16; 6] = [
-  pancurses::COLOR_WHITE,
-  pancurses::COLOR_RED,
-  pancurses::COLOR_YELLOW,
-  pancurses::COLOR_GREEN,
-  pancurses::COLOR_CYAN,
-  pancurses::COLOR_BLUE,
-];
-
 impl App {
   pub fn new(pipe: LogPipe, client: Arc<Client>) -> Self {
     App {
@@ -96,11 +86,10 @@ impl App {
     }
   }
 
-  fn draw_logs(&self, window: &pancurses::Window, scroll: usize) -> usize {
-    window.erase();
-    window.attrset(A_NORMAL);
-    let (max_y, max_x) = window.get_max_yx();
-    window.mv(1, 1);
+  fn draw_logs(&self, stdout: &mut std::io::Stdout, window: &Window, scroll: usize) -> anyhow::Result<usize> {
+    stdout.queue(terminal::Clear(terminal::ClearType::All))?;
+    let (max_x, max_y) = window.get_max_yx();
+    stdout.queue(cursor::MoveTo(window.x + 1, window.y + 1))?;
     let mut y = 1;
     let records = self.pipe.get();
     let start = records.len().saturating_sub((max_y as usize + scroll).saturating_sub(2));
@@ -108,16 +97,17 @@ impl App {
       let log = &records[i];
       let mut x = 1;
       let level_color = match log.level {
-        log::Level::Error => 1,
-        log::Level::Warn => 2,
-        log::Level::Info => 3,
-        log::Level::Debug => 4,
-        log::Level::Trace => 5,
+        log::Level::Error => (Color::Red),
+        log::Level::Warn => (Color::Yellow),
+        log::Level::Info => (Color::Green),
+        log::Level::Debug => (Color::Blue),
+        log::Level::Trace => (Color::Cyan),
       };
-      window.attrset(COLOR_PAIR(level_color) | A_BOLD);
+      //window.attrset(COLOR_PAIR(level_color) | A_BOLD);
       let level = log.level.to_string();
       for c in level.chars() {
-        window.mvaddch(y, (5_i32 - level.len() as i32) + x, c);
+        stdout.queue(cursor::MoveTo((5 - level.len()) as u16 + x, y))?;
+        stdout.queue(style::PrintStyledContent(c.bold().with(level_color)))?;
         x += 1;
         if x >= max_x -1 {
           x = 1;
@@ -125,105 +115,110 @@ impl App {
         }
       }
       x = 6;
-      window.attrset(COLOR_PAIR(0) | A_NORMAL);
+      // window.attrset(COLOR_PAIR(0) | A_NORMAL);
       let line = format!(": {}", log.body);
       for c in line.chars() {
-        window.mvaddch(y, x, c);
+        stdout.queue(cursor::MoveTo(x, y))?;
+        stdout.queue(style::Print(c))?;
         x += 1;
         if x >= max_x -1 {
           x = 1;
           y += 1;
         }
       }
-      window.attrset(A_NORMAL);
+      // window.attrset(A_NORMAL);
       y += 1;
       if y >= max_y -1 {
         break;
       }
     }
-    scroll.clamp(0, records.len().saturating_sub(max_y as usize))
+    Ok(scroll.clamp(0, records.len().saturating_sub(max_y as usize)))
   }
 
-  fn draw_top_bar(&mut self, window: &pancurses::Window) {
-    window.mv(0, 0);
+  fn draw_top_bar(&mut self, stdout: &mut std::io::Stdout) -> anyhow::Result<()> {
+    stdout.queue(cursor::MoveTo(0,0))?;
     match &self.server_addr {
       Some(txt) => {
-        window.attrset(COLOR_PAIR(3+INVERT_OFFSET) | A_BOLD);
-        window.addstr(txt);
+        // window.attrset(COLOR_PAIR(3+INVERT_OFFSET) | A_BOLD);
+        stdout.queue(style::PrintStyledContent(txt.clone().bold().negative()))?;
       }, 
       None => {
         if self.client.connected() {
           self.server_addr = Some(format!(" Connected to {}", self.client.server_addr()));
         }
-        window.attrset(COLOR_PAIR(INVERT_OFFSET) | A_BOLD);
-        window.addstr(" Not connected");
+        stdout.queue(style::PrintStyledContent(" Not connected".bold().negative()))?;//(COLOR_PAIR(INVERT_OFFSET) | A_BOLD);
       }
     }
-    let max_x = window.get_max_x();
-    let cur_x = window.get_cur_x();
-    for i in cur_x..max_x {
-      window.mvaddch(0, i, ' ');
-    }
+    // let max_x = window.get_max_x();
+    // let cur_x = window.get_cur_x();
+    // for i in cur_x..max_x {
+    //   window.mvaddch(0, i, ' ');
+    // }
+    Ok(())
   }
 
   pub fn stop(&self) {
     self.running.store(false, Ordering::SeqCst);
   }
 
-  pub fn run(&mut self) {
+  pub fn run(&mut self) -> anyhow::Result<()> {
     self.running.store(true, Ordering::SeqCst);
-    let window = initscr();
-    if has_colors() {
-      start_color();
-  }
-    for (i, color) in COLOR_TABLE.iter().enumerate() {
-      pancurses::init_pair(i as i16, *color, pancurses::COLOR_BLACK);
-      pancurses::init_pair((i as i16) + INVERT_OFFSET as i16, pancurses::COLOR_BLACK, *color);
-    }
+    let mut log_scroll: usize = 0;
+    let mut stdout = io::stdout();
 
-    window.keypad(true);
-    window.nodelay(true);
-    half_delay(1);
-    noecho();
-    let mut log_scroll = 0;
-
-    let (h, w) = window.get_max_yx();
-
-    let log_window = window.subwin(h - 1, (w as f32 * 0.75) as i32, 1, 0).unwrap();
+    let (w, h) = terminal::size().unwrap(); // TODO: remove unwrap
+    let log_window = Window {
+        x: 0,
+        y: 1,
+        w: w -1,
+        h: h -1,
+    };
 
     while self.running.load(Ordering::SeqCst) {
-      window.attrset(COLOR_PAIR(0));
-      self.draw_top_bar(&window);
-      log_scroll = self.draw_logs(&log_window, log_scroll);
-      log_window.border('|', '|', '=', '=', '+', '+', '+', '+');
+      log_scroll = self.draw_logs(&mut stdout, &log_window, log_scroll)?;
+      self.draw_top_bar(&mut stdout)?;
+      // TODO: log_window.border('|', '|', '=', '=', '+', '+', '+', '+');
       // log_window.touch();
-      match window.getch() {
-        Some(Input::KeyMouse) => {
-        }
-        Some(Input::Character(x)) => {
-          match x {
-            'q' => self.stop(),
-            _ => {}
+      stdout.flush()?;
+      if poll(Duration::from_millis(100))? {
+          match read()? {
+            Event::Mouse(_) => {
+            }
+            Event::Key(x) => {
+              match x.code  {
+                KeyCode::Char('q') => self.stop(),
+                KeyCode::Up => {
+                    log_scroll += 1;
+                }
+                KeyCode::Down => {
+                    log_scroll = log_scroll.saturating_sub(1);
+                }
+                _ => {}
+              }
+            },
+            Event::Resize(w,h) => {
+            
+            }
+            // Some(input) => {
+            //   error!("{:?}", input);
+            // },
+            _ => (),
           }
-        },
-        Some(Input::KeyResize) => {
-          resize_term(0, 0);
-        }
-        Some(Input::KeyUp) => {
-          log_scroll += 1;
-        }
-        Some(Input::KeyDown) => {
-          log_scroll = log_scroll.saturating_sub(1);
-        }
-        // Some(input) => {
-        //   error!("{:?}", input);
-        // },
-        _ => (),
-      }
-      window.touch();
-      window.refresh();
+    }
       
     }
-    endwin();
+    Ok(())
   }
+}
+
+pub struct Window {
+    pub x: u16,
+    pub y: u16,
+    pub w: u16,
+    pub h: u16,
+}
+impl Window {
+    pub fn get_max_yx(&self) -> (u16, u16) {
+        (self.w + self.x, self.h + self.y)
+    }
 }
