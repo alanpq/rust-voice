@@ -1,5 +1,5 @@
 use std::{sync::{Arc, Mutex, mpsc::{Sender, Receiver, self}}};
-use anyhow::{anyhow, Ok};
+use anyhow::{anyhow, Ok, Context as _};
 use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, Stream, BuildStreamError};
 use log::{debug, info, error, warn};
 
@@ -144,7 +144,7 @@ impl AudioServiceBuilder {
         out
       }
       Err(_) => None
-    }.unwrap_or(input_device.default_input_config()?.into());
+    }.unwrap_or_else(|| input_device.default_input_config().expect("could not get default input config").into());
     
     debug!("Default input config: {:?}", input_config);
 
@@ -163,7 +163,7 @@ impl AudioServiceBuilder {
         out
       }
       Err(_) => None
-    }.unwrap_or(input_device.default_output_config()?.into());
+    }.unwrap_or_else(|| output_device.default_output_config().expect("could not get default output config").into());
     debug!("Default output config: {:?}", output_config);
 
     info!("Input:");
