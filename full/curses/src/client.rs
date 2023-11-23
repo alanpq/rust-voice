@@ -86,6 +86,7 @@ impl Client {
             Ok(samples) => {
               // info!("sending voice packet");
               self.send(packets::ClientMessage::Voice { seq_num, samples });
+              seq_num += 1;
             }
             Err(e) => {
               if e == std::sync::mpsc::TryRecvError::Empty { continue; }
