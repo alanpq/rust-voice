@@ -2,21 +2,14 @@ use std::{sync::{Arc, Mutex, mpsc::{channel, Sender, Receiver}, atomic::{AtomicB
 use app::LogPipe;
 use clap::Parser;
 
+use client::{services::{AudioService, PeerMixer, OpusEncoder}, client::Client};
 use crossbeam::channel::{TryRecvError, self};
 use flexi_logger::{Logger, WriteMode};
-use latency::Latency;
 use log::{info, error};
-use services::{AudioService, PeerMixer, OpusEncoder};
-use client::Client;
 use common::{packets::{ClientMessage, self, AudioPacket}, UserInfo};
 use tracing::{span, Level};
 
-use crate::services::OpusDecoder;
 
-mod services;
-mod client;
-mod latency;
-mod util;
 mod app;
 
 #[derive(Parser, Debug)]
@@ -42,11 +35,11 @@ fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<AudioPacket<u8>>,mic_
         let mut audio = AudioService::builder()
           .with_latency(state.args.latency)
           .build()?;
-        let mixer = PeerMixer::new(
+        let mixer = Arc::new(PeerMixer::new(
           audio.out_config().sample_rate.0,
           audio.out_latency(),
-          audio.get_output_tx()
-        );
+        ));
+        audio.add_source(mixer.clone());
         audio.start()?;
 
         let input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
@@ -78,7 +71,6 @@ fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<AudioPacket<u8>>,mic_
               }
               _ => {}
           }
-            mixer.tick();
 
           }
         }
@@ -94,7 +86,7 @@ fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<AudioPacket<u8>>,mic_
 
 fn main() -> Result<(), anyhow::Error> {
   let pipe = LogPipe::new();
-  Logger::try_with_str("info")?
+  Logger::try_with_str("debug")?
     .log_to_writer(Box::new(pipe.clone()))
     .write_mode(WriteMode::Async)
     .start()?;
@@ -145,7 +137,7 @@ fn main() -> Result<(), anyhow::Error> {
     let pipe = pipe;
     std::thread::spawn(move || {
       let mut app = app::App::new(pipe, client);
-      app.run();
+      app.run().unwrap();
     })
   };
 

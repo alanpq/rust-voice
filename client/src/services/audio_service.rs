@@ -3,7 +3,7 @@ use anyhow::{anyhow, Ok, Context as _};
 use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, Stream, BuildStreamError};
 use log::{debug, info, error, warn};
 
-use crate::{latency::Latency, util::opus::OPUS_SAMPLE_RATES};
+use crate::{latency::Latency, util::opus::OPUS_SAMPLE_RATES, source::AudioSource};
 
 pub struct AudioService {
   host: cpal::Host,
@@ -19,8 +19,7 @@ pub struct AudioService {
   input_stream: Option<Stream>,
   output_stream: Option<Stream>,
 
-  output_tx: Sender<f32>,
-  output_rx: Arc<Mutex<Receiver<f32>>>,
+    sources: Arc<Mutex<Vec<Arc<dyn AudioSource>>>>,
 
   mic_tx: Sender<f32>,
   mic_rx: Option<Receiver<f32>>,
@@ -56,12 +55,12 @@ impl AudioService {
     Ok(())
   }
 
-  pub fn get_output_tx(&self) -> Sender<f32> {
-    self.output_tx.clone()
-  }
-
   pub fn take_mic_rx(&mut self) -> Option<Receiver<f32>> {
     self.mic_rx.take()
+  }
+
+  pub fn add_source(&self, source: Arc<impl AudioSource + 'static>) {
+    self.sources.lock().unwrap().push(source)
   }
 
   pub fn stop(&mut self) {
@@ -79,26 +78,28 @@ impl AudioService {
         }
       }
     };
-    self.input_device.build_input_stream(&self.input_config, data_fn, error)
+    self.input_device.build_input_stream(&self.input_config, data_fn, error, None)
   }
 
   fn make_output_stream(&mut self) -> Result<Stream, BuildStreamError> {
     let config = self.output_config.clone();
-    let rx = self.output_rx.clone();
+    let sources = self.sources.clone();
     let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
       {
-        let rx = rx.lock().unwrap();
         let channels = config.channels as usize;
         for i in 0..data.len()/channels {
+          let sample = sources.lock().unwrap()
+            .iter()
+            .filter_map(|s| s.next())
+            .sum();
           // since currently all input is mono, we must duplicate the sample for every channel
-          let sample = rx.try_recv().unwrap_or(0.0);
           for j in 0..channels {
             data[i*channels + j] = sample;
           }
         }
       }
     };
-    self.output_device.build_output_stream(&self.output_config, data_fn, error)
+    self.output_device.build_output_stream(&self.output_config, data_fn, error, None)
   }
 }
 
@@ -107,12 +108,18 @@ pub struct AudioServiceBuilder {
   output_device: Option<cpal::Device>,
   input_device: Option<cpal::Device>,
   latency_ms: f32,
+    sources: Vec<Arc<dyn AudioSource>>,
 }
 
 impl AudioServiceBuilder {
   pub fn new() -> Self {
-    Self { host: cpal::default_host(), output_device: None, input_device: None, latency_ms: 150.0}
+    Self { host: cpal::default_host(), output_device: None, input_device: None, latency_ms: 150.0, sources: Vec::new()}
   }
+
+    pub fn with_source(mut self, source: Arc<impl AudioSource + 'static>) -> Self {
+        self.sources.push(source);
+        self
+    }
 
   pub fn with_latency(mut self, latency_ms: f32) -> Self {
     self.latency_ms = latency_ms;
@@ -177,7 +184,6 @@ impl AudioServiceBuilder {
     let out_latency = Latency::new(self.latency_ms, output_config.sample_rate.0, output_config.channels);
     let mic_latency = Latency::new(self.latency_ms, output_config.sample_rate.0, output_config.channels);
 
-    let (output_tx, output_rx) = mpsc::channel();
     let (mic_tx, mic_rx) = mpsc::channel();
 
     Ok(AudioService {
@@ -193,8 +199,7 @@ impl AudioServiceBuilder {
       input_stream: None,
       output_stream: None,
 
-      output_tx,
-      output_rx: Arc::new(Mutex::new(output_rx)),
+      sources: Mutex::new(self.sources).into(),
 
       mic_tx,
       mic_rx: Some(mic_rx),

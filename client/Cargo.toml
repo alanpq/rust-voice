@@ -12,11 +12,12 @@ log = "0.4.17"
 
 anyhow = "1.0.70"
 crossbeam = "0.8.2"
-
-ringbuf = "0.3.2"
-cpal = { version = "0.15.1", features = ["jack"] }
+ringbuf = "0.3"
+cpal = { version = "0.15", features = ["jack"] }
 bincode = "1.3.3"
 opus = "0.3.0"
+tracing = "0.1.40"
+futures = "0.3"
 
 [dev-dependencies]
 clap = "4.1.11"

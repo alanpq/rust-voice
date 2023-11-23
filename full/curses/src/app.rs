@@ -3,9 +3,9 @@ use std::{sync::{atomic::{AtomicBool, Ordering}, Mutex, Arc, RwLock, MutexGuard}
 use crossterm::{terminal, QueueableCommand, cursor, style::{self, Stylize as _, Color}, event::{read, poll, Event, KeyEvent, KeyCode}, ExecutableCommand as _};
 use flexi_logger::{writers::LogWriter, DeferredNow, Record};
 use log::{Log, info, error};
-use ringbuf::{Producer, Consumer};
+use ringbuf::{Producer, Consumer, HeapProducer, HeapConsumer, HeapRb};
 
-use crate::client::Client;
+use client::client::Client;
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -15,8 +15,8 @@ pub struct LogRecord {
 }
 
 pub struct LogPipe {
-  producer: Arc<Mutex<Producer<LogRecord>>>,
-  consumer: Arc<Mutex<Consumer<LogRecord>>>,
+  producer: Arc<Mutex<HeapProducer<LogRecord>>>,
+  consumer: Arc<Mutex<HeapConsumer<LogRecord>>>,
   records: Arc<Mutex<Vec<LogRecord>>>,
 }
 
@@ -32,7 +32,7 @@ impl Clone for LogPipe {
 
 impl LogPipe {
   pub fn new() -> Self {
-    let buf = ringbuf::RingBuffer::new(2048);
+    let buf = HeapRb::new(2048);
     let (producer, consumer) = buf.split();
     Self {
       records: Arc::new(Mutex::new(Vec::new())),
