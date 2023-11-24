@@ -1,25 +1,41 @@
-use std::{sync::{Arc, Mutex, mpsc::{channel, Sender, Receiver}, atomic::{AtomicBool, Ordering}, RwLock}, net::SocketAddr, time::Duration, thread::JoinHandle};
+use anyhow::Context as _;
 use app::LogPipe;
 use clap::Parser;
+use std::{
+  net::SocketAddr,
+  sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc::{channel, Receiver, Sender},
+    Arc, Mutex, RwLock,
+  },
+  thread::JoinHandle,
+  time::Duration,
+};
 
-use client::{services::{AudioService, PeerMixer, OpusEncoder}, client::Client};
-use crossbeam::channel::{TryRecvError, self};
+use client::{
+  client::Client,
+  services::{AudioService, OpusEncoder, PeerMixer},
+  source::AudioMpsc,
+};
+use common::{
+  packets::{self, AudioPacket, ClientMessage},
+  UserInfo,
+};
+use crossbeam::channel::{self, TryRecvError};
 use flexi_logger::{Logger, WriteMode};
-use log::{info, error};
-use common::{packets::{ClientMessage, self, AudioPacket}, UserInfo};
+use log::{error, info};
 use tracing::{span, Level};
-
 
 mod app;
 
 #[derive(Parser, Debug)]
-#[clap(name="Rust Voice Server")]
+#[clap(name = "Rust Voice Server")]
 struct Args {
   #[clap(value_parser)]
   address: String,
   #[clap(value_parser = clap::value_parser!(u16).range(1..), short='p', long="port", default_value_t=8080)]
   port: u16,
-  #[clap(value_parser, long="latency", default_value_t=150.)]
+  #[clap(value_parser, long = "latency", default_value_t = 150.)]
   latency: f32,
 }
 
@@ -29,57 +45,42 @@ struct SharedState {
   pub peer_connect_rx: channel::Receiver<UserInfo>,
 }
 
-fn audio_thread(state: Arc<SharedState>, peer_rx: Receiver<AudioPacket<u8>>,mic_tx: Sender<Vec<u8>>) -> JoinHandle<()> {
+fn audio_thread(
+  mixer: Arc<PeerMixer>,
+  state: Arc<SharedState>,
+  peer_rx: Receiver<AudioPacket<u8>>,
+) -> JoinHandle<()> {
   std::thread::spawn(move || {
     let go = move || {
-        let mut audio = AudioService::builder()
-          .with_latency(state.args.latency)
-          .build()?;
-        let mixer = Arc::new(PeerMixer::new(
-          audio.out_config().sample_rate.0,
-          audio.out_latency(),
-        ));
-        audio.add_source(mixer.clone());
-        audio.start()?;
-
-        let input_consumer = audio.take_mic_rx().expect("microphone tx already taken");
-        let mut encoder = OpusEncoder::new(audio.out_config().sample_rate.0).expect("failed to create encoder");
-        encoder.add_output(mic_tx);
-        let span = span!(Level::INFO, "audio_thread");
-        while state.client_running.load(Ordering::SeqCst) {
-          let _span = span.enter();
-          match peer_rx.try_recv() {
-            Ok(packet) => {
-              mixer.push(packet.peer_id.into(), &packet.data);
+      let span = span!(Level::INFO, "audio_thread");
+      while state.client_running.load(Ordering::SeqCst) {
+        let _span = span.enter();
+        match peer_rx.try_recv() {
+          Ok(packet) => {
+            mixer.push(packet.peer_id.into(), &packet.data);
+          }
+          Err(e) => {
+            if e != std::sync::mpsc::TryRecvError::Empty {
+              error!("Error receiving packet: {}", e);
             }
-            Err(e) => {
-              if e != std::sync::mpsc::TryRecvError::Empty {
-                error!("Error receiving packet: {}", e);
-              }
-            }
-          }
-          if let Ok(sample) = input_consumer.try_recv() {
-            encoder.push(sample);
-          }
-          {
-            match state.peer_connect_rx.try_recv() {
-              Ok(info) => {
-                mixer.add_peer(info.id);
-              },
-              Err(e) if e != TryRecvError::Empty => {
-                error!("Error receiving peer connections: {}", e);
-              }
-              _ => {}
-          }
-
           }
         }
-
-        audio.stop();
-        Ok::<(), anyhow::Error>(())
+        {
+          match state.peer_connect_rx.try_recv() {
+            Ok(info) => {
+              mixer.add_peer(info.id);
+            }
+            Err(e) if e != TryRecvError::Empty => {
+              error!("Error receiving peer connections: {}", e);
+            }
+            _ => {}
+          }
+        }
+      }
+      Ok::<(), anyhow::Error>(())
     };
     if let Err(e) = go() {
-        error!("[Audio] {e:?}");
+      error!("[Audio] {e:?}");
     }
   })
 }
@@ -91,47 +92,58 @@ fn main() -> Result<(), anyhow::Error> {
     .write_mode(WriteMode::Async)
     .start()?;
 
-  #[cfg(feature="trace")]
+  #[cfg(feature = "trace")]
   {
     use tracing_subscriber::layer::SubscriberExt;
 
     tracing::subscriber::set_global_default(
-      tracing_subscriber::registry()
-          .with(tracing_tracy::TracyLayer::new()),
-    ).expect("set up the subscriber");
+      tracing_subscriber::registry().with(tracing_tracy::TracyLayer::new()),
+    )
+    .expect("set up the subscriber");
   }
 
   let args = Args::parse();
 
   let addr = format!("{}:{}", args.address, args.port)
-    .parse::<SocketAddr>().expect("Invalid server address.");
+    .parse::<SocketAddr>()
+    .expect("Invalid server address.");
 
-  let (mic_tx, mic_rx) = channel::<Vec<u8>>();
   let (peer_tx, peer_rx) = channel::<AudioPacket<u8>>();
 
-  let mut client = Client::new("test".to_string(), mic_rx, peer_tx);
+  let mut audio = AudioService::builder().with_latency(args.latency).build()?;
+
+  let mixer = Arc::new(PeerMixer::new(
+    audio.out_config().sample_rate.0,
+    audio.out_latency(),
+  ));
+  audio.add_source(mixer.clone());
+  audio.start()?;
+
+  let mic = audio
+    .take_mic()
+    .context("could not take microphone from audio service")?;
+  let mic = OpusEncoder::new(mic).context("failed to create encoder")?;
+
+  let mut client = Client::new("test".to_string(), Arc::new(mic), peer_tx);
   client.connect(addr);
   let peer_connect_rx = client.get_peer_connected_rx();
-
 
   let state = Arc::new(SharedState {
     args,
     client_running: AtomicBool::new(true),
     peer_connect_rx,
   });
-  
+  audio_thread(mixer, state.clone(), peer_rx);
+
   let client = Arc::new(client);
-  let client_handle;
   {
     let client = client.clone();
     let state = state.clone();
-    client_handle = std::thread::spawn(move|| {
+    std::thread::spawn(move || {
       client.service();
       state.client_running.store(false, Ordering::SeqCst);
     });
   }
-
-  let audio_handle = audio_thread(state, peer_rx, mic_tx);
 
   let app_handle = {
     let pipe = pipe;
@@ -142,6 +154,8 @@ fn main() -> Result<(), anyhow::Error> {
   };
 
   app_handle.join().unwrap();
-  
+
+  audio.stop();
+
   Ok(())
 }

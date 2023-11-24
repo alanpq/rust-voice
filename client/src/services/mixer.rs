@@ -1,41 +1,49 @@
-use std::{collections::HashMap, sync::{Mutex, Arc, RwLock, mpsc::Sender, atomic::{AtomicUsize, Ordering}}, time::{Instant, Duration}};
+use std::{
+  collections::HashMap,
+  sync::{
+    atomic::{AtomicUsize, Ordering},
+    mpsc::Sender,
+    Arc, Mutex, RwLock,
+  },
+  time::{Duration, Instant},
+};
 
 use log::warn;
-use ringbuf::{Producer, Consumer, HeapRb, HeapConsumer, HeapProducer};
+use ringbuf::{HeapConsumer, HeapProducer, HeapRb};
 
-use crate::{
-    latency::Latency,
-    source::AudioSource,
-};
+use super::OpusDecoder;
+use crate::{latency::Latency, source::AudioSource};
 use core::pin::Pin;
 use futures::{
-    stream::Stream,
-    sink::Sink,
-    task::{Context, Poll},
+  sink::Sink,
+  stream::Stream,
+  task::{Context, Poll},
 };
-use super::OpusDecoder;
 
 const EXPECTED_PEERS: usize = 4;
 
 struct Channel<S = f32> {
-    pub producer: Mutex<HeapProducer<S>>,
-    pub consumer: Mutex<HeapConsumer<S>>,
+  pub producer: Mutex<HeapProducer<S>>,
+  pub consumer: Mutex<HeapConsumer<S>>,
 }
 impl<S: Default + Copy + std::fmt::Debug> Channel<S> {
-    pub fn new(latency: &Latency) -> Self {
-        let buf = HeapRb::new(latency.samples()*2);
-        let (mut producer, consumer) = buf.split();
-        for _ in 0..latency.samples() {
-          producer.push(Default::default()).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
-        }
-        Self { producer: producer.into(), consumer: consumer.into() }
+  pub fn new(latency: &Latency) -> Self {
+    let buf = HeapRb::new(latency.samples() * 2);
+    let (mut producer, consumer) = buf.split();
+    for _ in 0..latency.samples() {
+      producer.push(Default::default()).unwrap(); // ring buffer has 2x latency, so unwrap will never fail
     }
-    pub fn pop(&self) -> Option<S> {
-        self.consumer.lock().unwrap().pop()
+    Self {
+      producer: producer.into(),
+      consumer: consumer.into(),
     }
-    pub fn push_slice(&self, samples: &[S]) -> usize {
-        self.producer.lock().unwrap().push_slice(samples)
-    }
+  }
+  pub fn pop(&self) -> Option<S> {
+    self.consumer.lock().unwrap().pop()
+  }
+  pub fn push_slice(&self, samples: &[S]) -> usize {
+    self.producer.lock().unwrap().push_slice(samples)
+  }
 }
 
 // service to mix peer audio together
@@ -91,7 +99,11 @@ impl PeerMixer {
 
     let decoder = OpusDecoder::new(self.sample_rate).unwrap();
 
-    self.channels.write().unwrap().insert(id, Channel::new(&self.latency));
+    self
+      .channels
+      .write()
+      .unwrap()
+      .insert(id, Channel::new(&self.latency));
 
     decoder_map.insert(id, decoder);
     self.peers.fetch_add(1, Ordering::SeqCst);
@@ -112,14 +124,17 @@ impl PeerMixer {
 }
 
 impl AudioSource for PeerMixer {
-    fn next(&self) -> Option<f32> {
-        let channels = self.channels.read().unwrap();
-        let mut sample: Option<f32> = None;
-        for (_, channel) in channels.iter() {
-            if let Some(s) = channel.pop() {
-                sample = Some(sample.unwrap_or_default() + s);
-            }
-        }
-        sample
+  fn next(&self) -> Option<f32> {
+    let channels = self.channels.read().unwrap();
+    let mut sample: Option<f32> = None;
+    for (_, channel) in channels.iter() {
+      if let Some(s) = channel.pop() {
+        sample = Some(sample.unwrap_or_default() + s);
+      }
     }
+    sample
+  }
+  fn sample_rate(&self) -> u32 {
+    self.sample_rate
+  }
 }

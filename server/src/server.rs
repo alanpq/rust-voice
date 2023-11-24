@@ -97,7 +97,7 @@ impl Server {
           peer_id: user.id as u8,
           data: samples,
           
-        }), Some(addr));
+        }), None);//, Some(addr));
         // self.broadcast(ServerMessage::Voice { user: user.unwrap().id, samples }, None);
       },
       _ => {}

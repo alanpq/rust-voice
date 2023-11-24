@@ -1,9 +1,19 @@
-use std::{sync::{Arc, Mutex, mpsc::{Sender, Receiver, self}}};
-use anyhow::{anyhow, Ok, Context as _};
-use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, Stream, BuildStreamError};
-use log::{debug, info, error, warn};
+use anyhow::{anyhow, Context as _, Ok};
+use cpal::{
+  traits::{DeviceTrait, HostTrait, StreamTrait},
+  BuildStreamError, Stream,
+};
+use log::{debug, error, info, warn};
+use std::sync::{
+  mpsc::{self, Receiver, Sender},
+  Arc, Mutex,
+};
 
-use crate::{latency::Latency, util::opus::OPUS_SAMPLE_RATES, source::AudioSource};
+use crate::{
+  latency::Latency,
+  source::{AudioMpsc, AudioSource},
+  util::opus::OPUS_SAMPLE_RATES,
+};
 
 pub struct AudioService {
   host: cpal::Host,
@@ -19,7 +29,7 @@ pub struct AudioService {
   input_stream: Option<Stream>,
   output_stream: Option<Stream>,
 
-    sources: Arc<Mutex<Vec<Arc<dyn AudioSource>>>>,
+  sources: Arc<Mutex<Vec<Arc<dyn AudioSource>>>>,
 
   mic_tx: Sender<f32>,
   mic_rx: Option<Receiver<f32>>,
@@ -55,11 +65,14 @@ impl AudioService {
     Ok(())
   }
 
-  pub fn take_mic_rx(&mut self) -> Option<Receiver<f32>> {
-    self.mic_rx.take()
+  pub fn take_mic(&mut self) -> Option<AudioMpsc> {
+    self
+      .mic_rx
+      .take()
+      .map(|rx| AudioMpsc::new(rx, self.input_config.sample_rate.0))
   }
 
-  pub fn add_source(&self, source: Arc<impl AudioSource + 'static>) {
+  pub fn add_source(&self, source: Arc<dyn AudioSource>) {
     self.sources.lock().unwrap().push(source)
   }
 
@@ -78,7 +91,9 @@ impl AudioService {
         }
       }
     };
-    self.input_device.build_input_stream(&self.input_config, data_fn, error, None)
+    self
+      .input_device
+      .build_input_stream(&self.input_config, data_fn, error, None)
   }
 
   fn make_output_stream(&mut self) -> Result<Stream, BuildStreamError> {
@@ -87,19 +102,23 @@ impl AudioService {
     let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
       {
         let channels = config.channels as usize;
-        for i in 0..data.len()/channels {
-          let sample = sources.lock().unwrap()
+        for i in 0..data.len() / channels {
+          let sample = sources
+            .lock()
+            .unwrap()
             .iter()
             .filter_map(|s| s.next())
             .sum();
           // since currently all input is mono, we must duplicate the sample for every channel
           for j in 0..channels {
-            data[i*channels + j] = sample;
+            data[i * channels + j] = sample;
           }
         }
       }
     };
-    self.output_device.build_output_stream(&self.output_config, data_fn, error, None)
+    self
+      .output_device
+      .build_output_stream(&self.output_config, data_fn, error, None)
   }
 }
 
@@ -108,18 +127,24 @@ pub struct AudioServiceBuilder {
   output_device: Option<cpal::Device>,
   input_device: Option<cpal::Device>,
   latency_ms: f32,
-    sources: Vec<Arc<dyn AudioSource>>,
+  sources: Vec<Arc<dyn AudioSource>>,
 }
 
 impl AudioServiceBuilder {
   pub fn new() -> Self {
-    Self { host: cpal::default_host(), output_device: None, input_device: None, latency_ms: 150.0, sources: Vec::new()}
+    Self {
+      host: cpal::default_host(),
+      output_device: None,
+      input_device: None,
+      latency_ms: 150.0,
+      sources: Vec::new(),
+    }
   }
 
-    pub fn with_source(mut self, source: Arc<impl AudioSource + 'static>) -> Self {
-        self.sources.push(source);
-        self
-    }
+  pub fn with_source(mut self, source: Arc<dyn AudioSource>) -> Self {
+    self.sources.push(source);
+    self
+  }
 
   pub fn with_latency(mut self, latency_ms: f32) -> Self {
     self.latency_ms = latency_ms;
@@ -128,10 +153,16 @@ impl AudioServiceBuilder {
 
   pub fn build(self) -> Result<AudioService, anyhow::Error> {
     let output_device = self.output_device.unwrap_or(
-      self.host.default_output_device().ok_or_else(|| anyhow!("no output device available"))?
+      self
+        .host
+        .default_output_device()
+        .ok_or_else(|| anyhow!("no output device available"))?,
     );
     let input_device = self.input_device.unwrap_or(
-      self.host.default_input_device().ok_or_else(|| anyhow!("no input device available"))?
+      self
+        .host
+        .default_input_device()
+        .ok_or_else(|| anyhow!("no input device available"))?,
     );
     info!("Output device: {:?}", output_device.name()?);
     info!("Input device: {:?}", input_device.name()?);
@@ -140,7 +171,9 @@ impl AudioServiceBuilder {
       Result::Ok(configs) => {
         let mut out = None;
         for config in configs {
-          if out.is_some() { break; }
+          if out.is_some() {
+            break;
+          }
           for rate in OPUS_SAMPLE_RATES {
             if config.max_sample_rate().0 >= rate && config.min_sample_rate().0 <= rate {
               out = Some(config.with_sample_rate(cpal::SampleRate(rate)).into());
@@ -150,16 +183,24 @@ impl AudioServiceBuilder {
         }
         out
       }
-      Err(_) => None
-    }.unwrap_or_else(|| input_device.default_input_config().expect("could not get default input config").into());
-    
+      Err(_) => None,
+    }
+    .unwrap_or_else(|| {
+      input_device
+        .default_input_config()
+        .expect("could not get default input config")
+        .into()
+    });
+
     debug!("Default input config: {:?}", input_config);
 
     let output_config: cpal::StreamConfig = match output_device.supported_output_configs() {
       Result::Ok(configs) => {
         let mut out = None;
         for config in configs {
-          if out.is_some() { break; }
+          if out.is_some() {
+            break;
+          }
           for rate in OPUS_SAMPLE_RATES {
             if config.max_sample_rate().0 >= rate && config.min_sample_rate().0 <= rate {
               out = Some(config.with_sample_rate(cpal::SampleRate(rate)).into());
@@ -169,8 +210,14 @@ impl AudioServiceBuilder {
         }
         out
       }
-      Err(_) => None
-    }.unwrap_or_else(|| output_device.default_output_config().expect("could not get default output config").into());
+      Err(_) => None,
+    }
+    .unwrap_or_else(|| {
+      output_device
+        .default_output_config()
+        .expect("could not get default output config")
+        .into()
+    });
     debug!("Default output config: {:?}", output_config);
 
     info!("Input:");
@@ -181,8 +228,16 @@ impl AudioServiceBuilder {
     info!(" - Channels: {}", output_config.channels);
     info!(" - Sample Rate: {}", output_config.sample_rate.0);
 
-    let out_latency = Latency::new(self.latency_ms, output_config.sample_rate.0, output_config.channels);
-    let mic_latency = Latency::new(self.latency_ms, output_config.sample_rate.0, output_config.channels);
+    let out_latency = Latency::new(
+      self.latency_ms,
+      output_config.sample_rate.0,
+      output_config.channels,
+    );
+    let mic_latency = Latency::new(
+      self.latency_ms,
+      output_config.sample_rate.0,
+      output_config.channels,
+    );
 
     let (mic_tx, mic_rx) = mpsc::channel();
 
