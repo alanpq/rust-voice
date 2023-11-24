@@ -154,6 +154,7 @@
             libopus
             ncurses jack2 libjack2
             wineWowPackages.stable
+            xorg.libX11 xorg.libXrandr xorg.libXcursor xorg.libXi
           ];
           RUST_SRC_PATH = rustPlatform.rustLibSrc;
         };

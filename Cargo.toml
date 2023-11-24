@@ -8,4 +8,5 @@ members = [
   "server",
 
   "full/curses",
+  "full/app",
 ]
