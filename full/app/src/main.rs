@@ -46,7 +46,7 @@ enum Inner {
 impl Default for Inner {
   fn default() -> Self {
     Self::Home {
-      address: "127.0.0.1:8080".to_string(),
+      address: std::env::var("ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
       username: "user".to_string(),
     }
   }
