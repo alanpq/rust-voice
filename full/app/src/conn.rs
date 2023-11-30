@@ -12,7 +12,7 @@ use lib::{
   services::{AudioHandle, OpusEncoder, PeerMixer},
   source::AudioByteSource,
 };
-use log::{error, info, trace};
+use log::{error, info, trace, warn};
 
 pub type Connection = mpsc::Sender<Input>;
 
@@ -65,6 +65,7 @@ pub fn client() -> Subscription<Event> {
             Input::Connect(username, addr) => {
               info!("Connecting...");
               let (audio, mic) = AudioHandle::builder().start().unwrap();
+              audio.play();
               let mixer = Arc::new(PeerMixer::new(
                 audio.out_cfg().sample_rate.0,
                 audio.out_latency(),
@@ -128,8 +129,8 @@ pub fn client() -> Subscription<Event> {
         } => {
           let mut buf = [0; packets::PACKET_MAX_SIZE];
           futures::select! {
-          res = socket.recv(&mut buf).fuse() => {
-            if let Ok(bytes) = res {
+            res = socket.recv(&mut buf).fuse() => {
+              if let Ok(bytes) = res {
                 let msg = ServerMessage::from_bytes(&buf[..bytes]).expect("invalid packet from server");
                 match msg {
                   ServerMessage::Voice(packet) => {
