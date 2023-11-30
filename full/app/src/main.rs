@@ -12,8 +12,8 @@ use conn::Connection;
 use flexi_logger::{Logger, LoggerHandle, WriteMode};
 use iced::widget::{button, column, row, scrollable, text, text_input, Column};
 use iced::{
-  executor, font, Alignment, Application, Command, Element, Font, Sandbox, Settings, Subscription,
-  Theme,
+  executor, font, Alignment, Application, Command, Element, Font, Length, Sandbox, Settings,
+  Subscription, Theme,
 };
 use log::info;
 use log_pipe::LogPipe;
@@ -21,9 +21,9 @@ use log_pipe::LogPipe;
 const FONT: Font = Font::with_name("Cabin");
 pub fn main() -> anyhow::Result<()> {
   let pipe = LogPipe::new();
-  let logger = Logger::try_with_env_or_str("app=debug")?
-    .log_to_stdout()
-    .add_writer("Box", Box::new(pipe.clone()))
+  let logger = Logger::try_with_str("app=debug,client=debug")?
+    .log_to_writer(Box::new(pipe.clone()))
+    .duplicate_to_stdout(flexi_logger::Duplicate::All)
     .write_mode(WriteMode::Async)
     .start()?;
 
@@ -41,7 +41,7 @@ pub fn main() -> anyhow::Result<()> {
 enum Inner {
   Home { address: String, username: String },
   Connecting,
-  Connected { messages: Vec<String> },
+  Connected {},
 }
 impl Default for Inner {
   fn default() -> Self {
@@ -126,17 +126,17 @@ impl Application for App {
       },
       Inner::Connecting => {
         if let Message::Client(conn::Event::Connected) = message {
-          self.inner = Inner::Connected {
-            messages: vec!["Connected!".to_string()],
-          }
+          self.inner = Inner::Connected {}
         }
       }
-      Inner::Connected { messages } => match message {
+      Inner::Connected {} => match message {
         Message::Client(c) => match c {
           conn::Event::Ready(_) => {}
-          conn::Event::Connected => messages.push("Connected!".to_string()),
+          conn::Event::Connected => {
+            info!("Connected!");
+          }
           conn::Event::Joined(user) => {
-            messages.push(format!("{} has joined the room.", user.username))
+            info!("{} has joined the room.", user.username)
           }
         },
         Message::Disconnect => {
@@ -159,8 +159,21 @@ impl Application for App {
         column![username, conn_widget].padding(20).into()
       }
       Inner::Connecting => text("Connecting...").into(),
-      Inner::Connected { messages } => {
-        let logs = Column::with_children(messages.iter().map(|m| text(m).into()).collect());
+      Inner::Connected {} => {
+        let logs = Column::with_children(
+          self
+            .log
+            .get()
+            .iter()
+            .map(|m| {
+              row![
+                text(format!("{}", m.level)).width(Length::Fixed(60.0)),
+                text(format!("{}", m.body)),
+              ]
+              .into()
+            })
+            .collect(),
+        );
         let logs = scrollable(logs);
         let btn = button("Disconnect").on_press(Message::Disconnect);
         column![btn, logs].into()
