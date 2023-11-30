@@ -94,7 +94,7 @@ impl Client {
     // self.socket.set_nonblocking(true);
   }
 
-  pub fn service(&self) {
+  pub async fn service(&self) {
     self
       .socket
       .set_nonblocking(true)
@@ -111,7 +111,7 @@ impl Client {
             error!("Failed to receive packet: {}", e);
             break;
           }
-          if let Some(samples) = self.mic.next() {
+          if let Some(samples) = self.mic.next().await {
             trace!("sending voice packet size {}", samples.len());
             self.send(packets::ClientMessage::Voice { seq_num, samples });
             seq_num += 1;

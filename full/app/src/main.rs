@@ -1,16 +1,18 @@
+mod conn;
 mod log_pipe;
+
+extern crate client as lib;
 
 use std::net::SocketAddr;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 
-use client::client::Client;
-use client::services::{AudioService, OpusEncoder, PeerMixer};
-use common::packets::AudioPacket;
+use conn::Connection;
 use flexi_logger::{Logger, LoggerHandle, WriteMode};
 use iced::widget::{button, column, row, text, text_input};
 use iced::{
-  executor, font, Alignment, Application, Command, Element, Font, Sandbox, Settings, Theme,
+  executor, font, Alignment, Application, Command, Element, Font, Sandbox, Settings, Subscription,
+  Theme,
 };
 use log::info;
 use log_pipe::LogPipe;
@@ -18,7 +20,8 @@ use log_pipe::LogPipe;
 const FONT: Font = Font::with_name("Cabin");
 pub fn main() -> anyhow::Result<()> {
   let pipe = LogPipe::new();
-  let logger = Logger::try_with_str("debug")?
+  // let logger = Logger::try_with_env_or_str("app=debug")?
+  let logger = Logger::try_with_env_or_str("app,client")?
     .log_to_stdout()
     .add_writer("Box", Box::new(pipe.clone()))
     .write_mode(WriteMode::Async)
@@ -37,13 +40,14 @@ pub fn main() -> anyhow::Result<()> {
 
 enum Inner {
   Home { address: String, username: String },
-  Room { audio: AudioService, client: Client },
+  Connecting,
+  Connected {},
 }
 impl Default for Inner {
   fn default() -> Self {
     Self::Home {
-      address: String::new(),
-      username: String::new(),
+      address: "127.0.0.1:8080".to_string(),
+      username: "user".to_string(),
     }
   }
 }
@@ -52,6 +56,8 @@ struct App {
   log: LogPipe,
   logger: LoggerHandle,
   inner: Inner,
+
+  connection: Option<Connection>,
 }
 
 #[derive(Default)]
@@ -67,6 +73,7 @@ enum Message {
   SetAddress(String),
   SetUsername(String),
   FontLoaded(Result<(), font::Error>),
+  Client(conn::Event),
 }
 
 impl Application for App {
@@ -80,10 +87,8 @@ impl Application for App {
       Self {
         log: flags.log,
         logger: flags.logger.unwrap(),
-        inner: Inner::Home {
-          address: String::new(),
-          username: String::new(),
-        },
+        inner: Inner::default(),
+        connection: None,
       },
       font::load(include_bytes!("../fonts/Cabin-Regular.ttf").as_slice()).map(Message::FontLoaded),
     )
@@ -93,28 +98,22 @@ impl Application for App {
     String::from("rust-voice")
   }
 
+  fn subscription(&self) -> Subscription<Self::Message> {
+    conn::client().map(Message::Client)
+  }
+
   fn update(&mut self, message: Message) -> Command<Message> {
+    if let Message::Client(conn::Event::Ready(c)) = &message {
+      self.connection = Some(c.clone());
+    }
     match &mut self.inner {
       Inner::Home { address, username } => match message {
         Message::Connect => {
-          info!("Connecting...");
-          let mut audio = AudioService::builder().build().unwrap();
-          let mixer = Arc::new(PeerMixer::new(
-            audio.out_config().sample_rate.0,
-            audio.out_latency(),
-          ));
-          audio.add_source(mixer.clone());
-          audio.start().unwrap();
-
-          let mic = audio
-            .take_mic()
-            .expect("could not take microphone from audio service");
-          let mic = OpusEncoder::new(mic).expect("failed to create encoder");
-
-          let (peer_tx, peer_rx) = channel::<AudioPacket<u8>>();
-          let mut client = Client::new(username.to_string(), Arc::new(mic), peer_tx);
-          client.connect(address.parse::<SocketAddr>().unwrap());
-          self.inner = Inner::Room { audio, client };
+          if let Some(ref mut conn) = &mut self.connection {
+            info!("Connecting...");
+            conn.try_send(conn::Input::Connect(username.clone(), address.parse().unwrap())).unwrap(/* FIXME: remove this */);
+            self.inner = Inner::Connecting;
+          }
         }
         Message::SetAddress(addr) => {
           *address = addr;
@@ -125,7 +124,12 @@ impl Application for App {
         Message::FontLoaded(_) => {}
         _ => {}
       },
-      Inner::Room { .. } => match message {
+      Inner::Connecting => {
+        if let Message::Client(conn::Event::Connected) = message {
+          self.inner = Inner::Connected {}
+        }
+      }
+      Inner::Connected { .. } => match message {
         Message::Disconnect => {
           self.inner = Inner::default();
         }
@@ -145,7 +149,8 @@ impl Application for App {
         ];
         column![username, conn_widget].padding(20).into()
       }
-      Inner::Room { audio, client } => {
+      Inner::Connecting => text("Connecting...").into(),
+      Inner::Connected { .. } => {
         let btn = button("Disconnect").on_press(Message::Disconnect);
         btn.into()
       }

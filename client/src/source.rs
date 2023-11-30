@@ -1,14 +1,18 @@
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::Arc;
 
+use async_trait::async_trait;
+use futures::{channel::mpsc, lock::Mutex, StreamExt as _};
 use log::error;
 
+#[async_trait]
 pub trait AudioByteSource: Send + Sync {
-  fn next(&self) -> Option<Vec<u8>>;
+  async fn next(&self) -> Option<Vec<u8>>;
 }
 
 // TODO: support closing of audio sources
+#[async_trait]
 pub trait AudioSource: Send + Sync {
-  fn next(&self) -> Option<f32>;
+  async fn next(&self) -> Option<f32>;
 
   fn sample_rate(&self) -> u32;
 }
@@ -21,16 +25,11 @@ impl AudioMpsc {
   }
 }
 
+#[async_trait]
 impl AudioSource for AudioMpsc {
-  fn next(&self) -> Option<f32> {
-    let rx = self.0.lock().unwrap();
-    match rx.recv() {
-      Ok(s) => Some(s),
-      Err(e) => {
-        error!("could not get sample from audio source: {e}");
-        None
-      }
-    }
+  async fn next(&self) -> Option<f32> {
+    let mut rx = self.0.lock().await;
+    rx.next().await
   }
 
   fn sample_rate(&self) -> u32 {

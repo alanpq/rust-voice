@@ -1,9 +1,8 @@
-use std::{
-  collections::VecDeque,
-  sync::{mpsc::Sender, Arc, Mutex},
-};
+use std::{collections::VecDeque, sync::Arc};
 
+use async_trait::async_trait;
 use common::packets;
+use futures::lock::Mutex;
 use log::{info, warn};
 
 use crate::{
@@ -52,13 +51,13 @@ impl<S: AudioSource> OpusEncoder<S> {
     self.frame_size
   }
 
-  pub fn next(&self) -> Option<Vec<u8>> {
-    let mut buf = self.in_buffer.lock().unwrap();
-    if let Some(s) = self.source.next() {
+  pub async fn next(&self) -> Option<Vec<u8>> {
+    let mut buf = self.in_buffer.lock().await;
+    if let Some(s) = self.source.next().await {
       buf.push_back(s);
     }
     if buf.len() >= self.frame_size {
-      let mut encoder = self.encoder.lock().unwrap();
+      let mut encoder = self.encoder.lock().await;
       let input = buf.drain(..self.frame_size).collect::<Vec<f32>>();
       match encoder.encode_vec_float(&input, packets::PACKET_MAX_SIZE / 2) {
         Ok(packet) => return Some(packet),
@@ -71,8 +70,9 @@ impl<S: AudioSource> OpusEncoder<S> {
   }
 }
 
+#[async_trait]
 impl<S: AudioSource> AudioByteSource for OpusEncoder<S> {
-  fn next(&self) -> Option<Vec<u8>> {
-    self.next()
+  async fn next(&self) -> Option<Vec<u8>> {
+    self.next().await
   }
 }

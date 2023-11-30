@@ -8,6 +8,7 @@ use std::{
   time::{Duration, Instant},
 };
 
+use async_trait::async_trait;
 use log::warn;
 use ringbuf::{HeapConsumer, HeapProducer, HeapRb};
 
@@ -123,8 +124,9 @@ impl PeerMixer {
   }
 }
 
+#[async_trait]
 impl AudioSource for PeerMixer {
-  fn next(&self) -> Option<f32> {
+  async fn next(&self) -> Option<f32> {
     let channels = self.channels.read().unwrap();
     let mut sample: Option<f32> = None;
     for (_, channel) in channels.iter() {

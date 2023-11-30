@@ -14,7 +14,7 @@ use std::{
 
 use client::{
   client::Client,
-  services::{AudioService, OpusEncoder, PeerMixer},
+  services::{AudioHandle, OpusEncoder, PeerMixer},
   source::AudioMpsc,
 };
 use common::{
@@ -110,18 +110,14 @@ fn main() -> Result<(), anyhow::Error> {
 
   let (peer_tx, peer_rx) = channel::<AudioPacket<u8>>();
 
-  let mut audio = AudioService::builder().with_latency(args.latency).build()?;
+  let (mut audio, mic) = AudioHandle::builder().with_latency(args.latency).start()?;
 
   let mixer = Arc::new(PeerMixer::new(
-    audio.out_config().sample_rate.0,
+    audio.out_cfg().sample_rate.0,
     audio.out_latency(),
   ));
   audio.add_source(mixer.clone());
-  audio.start()?;
 
-  let mic = audio
-    .take_mic()
-    .context("could not take microphone from audio service")?;
   let mic = OpusEncoder::new(mic).context("failed to create encoder")?;
 
   let mut client = Client::new("test".to_string(), Arc::new(mic), peer_tx);
