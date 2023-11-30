@@ -1,18 +1,23 @@
 use std::{any::TypeId, net::SocketAddr, sync::Arc};
 
+use anyhow::Context;
 use async_std::net::UdpSocket;
-use common::packets::{self, AudioPacket, SeqNum, ServerMessage};
-use futures::FutureExt as _;
+use common::{
+  packets::{self, AudioPacket, ClientMessage, SeqNum, ServerMessage},
+  UserInfo,
+};
+use futures::{channel::mpsc::Sender, FutureExt as _, StreamExt as _};
 use iced::{
   futures::{channel::mpsc, lock::Mutex, SinkExt as _},
   subscription, Subscription,
 };
 use lib::{
-  client::Client,
   services::{AudioHandle, OpusEncoder, PeerMixer},
   source::AudioByteSource,
 };
 use log::{error, info, trace, warn};
+
+use crate::client::Client;
 
 pub type Connection = mpsc::Sender<Input>;
 
@@ -20,6 +25,7 @@ pub type Connection = mpsc::Sender<Input>;
 pub enum Event {
   Ready(Connection),
   Connected,
+  Joined(UserInfo),
 }
 
 pub enum Input {
@@ -33,18 +39,78 @@ pub enum State {
   Connected {
     audio: AudioHandle,
     mixer: Arc<PeerMixer>,
-
-    seq_num: SeqNum,
-
-    socket: UdpSocket,
     mic: Arc<dyn AudioByteSource>,
+
+    client: Client,
   },
 }
 
-async fn send(socket: &UdpSocket, command: common::packets::ClientMessage) {
-  let packet = bincode::serialize(&command).unwrap();
-  socket.send(&packet).await.unwrap();
-  trace!("-> {} bytes", packet.len());
+impl State {
+  pub async fn run(&mut self, output: &mut Sender<Event>) {
+    match self {
+      State::Starting => {
+        let (tx, rx) = mpsc::channel(128);
+        let _ = output.send(Event::Ready(tx)).await;
+        *self = State::Ready(rx);
+      }
+      State::Ready(rx) => match rx.select_next_some().await {
+        Input::Connect(username, addr) => {
+          info!("Connecting...");
+          let (audio, mic) = AudioHandle::builder().start().unwrap();
+          audio.play();
+          let mixer = Arc::new(PeerMixer::new(
+            audio.out_cfg().sample_rate.0,
+            audio.out_latency(),
+          ));
+          audio.add_source(mixer.clone());
+
+          let mic = Arc::new(OpusEncoder::new(mic).expect("failed to create encoder"));
+
+          let mut client = Client::new()
+            .await
+            .context("could not create client")
+            .unwrap();
+          client.connect(addr, username).await.unwrap();
+          // info!("Connecting to {:?}...", socket.peer_addr().unwrap());
+
+          info!("Connected!");
+          let _ = output.send(Event::Connected).await;
+          *self = State::Connected {
+            audio,
+            mixer,
+            mic,
+            client,
+          }
+        }
+        Input::Disconnect => todo!(),
+      },
+      State::Connected {
+        audio,
+        mixer,
+        mic,
+        client,
+      } => {
+        futures::select! {
+          res = client.next().fuse() => {match res {
+            Ok(msg) => match msg {
+              ServerMessage::Pong => {},
+              ServerMessage::Connected(user) => {let _ = output.send(Event::Joined(user)).await;},
+              ServerMessage::Voice(pak) => {
+                mixer.push(pak.peer_id as u32, &pak.data);
+              },
+            },
+            Err(e) => panic!("{e}"), // FIXME: dont fucking panic
+          }}
+          mic = mic.next().fuse() => {
+            if let Some(samples) = mic {
+              let seq_num = client.next_seq();
+              client.send(ClientMessage::Voice { seq_num, samples }).await.unwrap();
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 pub fn client() -> Subscription<Event> {
@@ -53,109 +119,7 @@ pub fn client() -> Subscription<Event> {
     let mut state = State::Starting;
 
     loop {
-      match &mut state {
-        State::Starting => {
-          let (tx, rx) = mpsc::channel(128);
-          let _ = output.send(Event::Ready(tx)).await;
-          state = State::Ready(rx);
-        }
-        State::Ready(rx) => {
-          use iced::futures::StreamExt;
-          match rx.select_next_some().await {
-            Input::Connect(username, addr) => {
-              info!("Connecting...");
-              let (audio, mic) = AudioHandle::builder().start().unwrap();
-              audio.play();
-              let mixer = Arc::new(PeerMixer::new(
-                audio.out_cfg().sample_rate.0,
-                audio.out_latency(),
-              ));
-              audio.add_source(mixer.clone());
-
-              let mic = Arc::new(OpusEncoder::new(mic).expect("failed to create encoder"));
-
-              let socket = UdpSocket::bind("0.0.0.0:0")
-                .await
-                .expect("could not bind socket");
-              socket
-                .connect(addr)
-                .await
-                .expect("TODO: socket failed to connect");
-
-              send(
-                &socket,
-                packets::ClientMessage::Connect {
-                  username: username.clone(),
-                },
-              )
-              .await;
-
-              info!("Connecting to {:?}...", socket.peer_addr().unwrap());
-              let mut buf = [0; packets::PACKET_MAX_SIZE];
-
-              match socket.recv(&mut buf).await {
-                Ok(bytes) => {
-                  let p = packets::ServerMessage::from_bytes(&buf[..bytes])
-                    .expect("invalid packet from server");
-                  match p {
-                    packets::ServerMessage::Pong => {
-                      info!("Connected!");
-                      let _ = output.send(Event::Connected).await;
-                      state = State::Connected {
-                        audio,
-                        mixer,
-                        seq_num: SeqNum(0),
-                        mic,
-                        socket,
-                      }
-                    }
-                    _ => {
-                      error!("Unexpected packet from server: {p:?}");
-                    }
-                  }
-                }
-                Err(_) => todo!(),
-              }
-            }
-            Input::Disconnect => todo!(),
-          }
-        }
-        State::Connected {
-          audio,
-          mixer,
-          seq_num,
-          mic,
-          socket,
-        } => {
-          let mut buf = [0; packets::PACKET_MAX_SIZE];
-          futures::select! {
-            res = socket.recv(&mut buf).fuse() => {
-              if let Ok(bytes) = res {
-                let msg = ServerMessage::from_bytes(&buf[..bytes]).expect("invalid packet from server");
-                match msg {
-                  ServerMessage::Voice(packet) => {
-                    // self.peer_tx.lock().unwrap().send(packet).unwrap();
-                    mixer.push(packet.peer_id as u32, &packet.data);
-                  }
-                  ServerMessage::Connected(info) => {
-                    info!("{} connected.", info.username);
-                    // self.peer_connected_tx.send(info).unwrap();
-                  }
-                  _ => {
-                    error!("Unexpected packet from server: {:?}", msg);
-                  }
-                }
-              }
-            }
-            mic = mic.next().fuse() => {
-              if let Some(samples) = mic {
-                send(socket, packets::ClientMessage::Voice { seq_num: *seq_num, samples }).await;
-                *seq_num += 1;
-              }
-            }
-          }
-        }
-      }
+      state.run(&mut output).await;
     }
   })
 }

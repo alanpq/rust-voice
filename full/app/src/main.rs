@@ -1,3 +1,4 @@
+mod client;
 mod conn;
 mod log_pipe;
 
@@ -9,7 +10,7 @@ use std::sync::Arc;
 
 use conn::Connection;
 use flexi_logger::{Logger, LoggerHandle, WriteMode};
-use iced::widget::{button, column, row, text, text_input};
+use iced::widget::{button, column, row, scrollable, text, text_input, Column};
 use iced::{
   executor, font, Alignment, Application, Command, Element, Font, Sandbox, Settings, Subscription,
   Theme,
@@ -20,8 +21,7 @@ use log_pipe::LogPipe;
 const FONT: Font = Font::with_name("Cabin");
 pub fn main() -> anyhow::Result<()> {
   let pipe = LogPipe::new();
-  // let logger = Logger::try_with_env_or_str("app=debug")?
-  let logger = Logger::try_with_env_or_str("app,client")?
+  let logger = Logger::try_with_env_or_str("app=debug")?
     .log_to_stdout()
     .add_writer("Box", Box::new(pipe.clone()))
     .write_mode(WriteMode::Async)
@@ -41,7 +41,7 @@ pub fn main() -> anyhow::Result<()> {
 enum Inner {
   Home { address: String, username: String },
   Connecting,
-  Connected {},
+  Connected { messages: Vec<String> },
 }
 impl Default for Inner {
   fn default() -> Self {
@@ -126,10 +126,19 @@ impl Application for App {
       },
       Inner::Connecting => {
         if let Message::Client(conn::Event::Connected) = message {
-          self.inner = Inner::Connected {}
+          self.inner = Inner::Connected {
+            messages: vec!["Connected!".to_string()],
+          }
         }
       }
-      Inner::Connected { .. } => match message {
+      Inner::Connected { messages } => match message {
+        Message::Client(c) => match c {
+          conn::Event::Ready(_) => {}
+          conn::Event::Connected => messages.push("Connected!".to_string()),
+          conn::Event::Joined(user) => {
+            messages.push(format!("{} has joined the room.", user.username))
+          }
+        },
         Message::Disconnect => {
           self.inner = Inner::default();
         }
@@ -150,9 +159,11 @@ impl Application for App {
         column![username, conn_widget].padding(20).into()
       }
       Inner::Connecting => text("Connecting...").into(),
-      Inner::Connected { .. } => {
+      Inner::Connected { messages } => {
+        let logs = Column::with_children(messages.iter().map(|m| text(m).into()).collect());
+        let logs = scrollable(logs);
         let btn = button("Disconnect").on_press(Message::Disconnect);
-        btn.into()
+        column![btn, logs].into()
       }
     }
   }
