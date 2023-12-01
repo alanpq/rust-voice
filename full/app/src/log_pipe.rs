@@ -27,7 +27,7 @@ impl Clone for LogPipe {
 
 impl LogPipe {
   pub fn new() -> Self {
-    let buf = HeapRb::new(2048);
+    let buf = HeapRb::new(4096);
     let (producer, consumer) = buf.split();
     Self {
       records: Arc::new(Mutex::new(Vec::new())),
@@ -49,20 +49,18 @@ impl LogPipe {
   }
 }
 impl Default for LogPipe {
-    fn default() -> Self {
-        Self::new()
-    }
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl LogWriter for LogPipe {
   fn write(&self, now: &mut DeferredNow, record: &Record<'_>) -> std::io::Result<()> {
     let mut producer = self.producer.lock().unwrap();
-    producer
-      .push(LogRecord {
-        level: record.level(),
-        body: record.args().to_string(),
-      })
-      .expect("could not push record");
+    let _ = producer.push(LogRecord {
+      level: record.level(),
+      body: record.args().to_string(),
+    });
     Ok(())
   }
 
