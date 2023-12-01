@@ -103,7 +103,7 @@ impl Application for App {
         inner: Inner::default(),
         connection: None,
 
-        address: std::env::var("ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
+        address: std::env::var("ADDRESS").unwrap_or_else(|_| "gs.alanp.me".to_string()),
         username: std::env::var("USER").unwrap_or_default(),
       },
       Command::batch(vec![
