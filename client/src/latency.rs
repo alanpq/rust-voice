@@ -1,8 +1,8 @@
 #[derive(Copy, Clone)]
 pub struct Latency {
-  ms: f32,
-  frames: usize,
-  samples: usize,
+  pub ms: f32,
+  pub frames: usize,
+  pub samples: usize,
 }
 
 impl Latency {
