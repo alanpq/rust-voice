@@ -34,6 +34,7 @@ pub enum ServerMessage {
   Pong,
   /// a user connected
   Connected(UserInfo),
+  Disconnected(UserInfo),
   /// voice packet from a user
   Voice(AudioPacket<u8>),
 }

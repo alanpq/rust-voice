@@ -138,7 +138,10 @@ impl Application for App {
             info!("Connected!");
           }
           conn::Event::Joined(user) => {
-            info!("{} has joined the room.", user.username)
+            info!("{} has joined the room.", user.username);
+          }
+          conn::Event::Left(user) => {
+            info!("{} has left.", user.username);
           }
         },
         Message::Disconnect => {

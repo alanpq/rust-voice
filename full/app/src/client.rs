@@ -5,8 +5,7 @@ use async_std::net::UdpSocket;
 use async_trait::async_trait;
 use client::{services::PeerMixer, source::AudioByteSource};
 use common::packets::{self, ClientMessage, SeqNum, ServerMessage};
-use futures::executor::block_on;
-use log::trace;
+use log::{debug, trace};
 
 use crate::async_drop::AsyncDrop;
 
@@ -60,6 +59,7 @@ impl Client {
 #[async_trait]
 impl AsyncDrop for Client {
   async fn async_drop(&mut self) {
+    debug!("sending dc...");
     let _ = self.send(ClientMessage::Disconnect).await;
   }
 }

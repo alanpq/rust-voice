@@ -26,6 +26,7 @@ pub enum Event {
   Ready(Connection),
   Connected,
   Joined(UserInfo),
+  Left(UserInfo),
 }
 
 pub enum Input {
@@ -99,6 +100,7 @@ impl State {
             Ok(msg) => match msg {
               ServerMessage::Pong => {},
               ServerMessage::Connected(user) => {let _ = output.send(Event::Joined(user)).await;},
+              ServerMessage::Disconnected(user) => {let _ = output.send(Event::Left(user)).await;},
               ServerMessage::Voice(pak) => {
                 mixer.push(pak.peer_id as u32, &pak.data);
               },
