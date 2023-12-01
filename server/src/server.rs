@@ -76,7 +76,6 @@ impl Server {
           return;
         }
         let mut users = self.users.lock().await;
-        let count = users.len();
         let id = self
           .counter
           .fetch_add(1, std::sync::atomic::Ordering::SeqCst) as u32;
@@ -97,6 +96,7 @@ impl Server {
         }
         users.insert(addr, user.clone());
         info!("{} users connected", users.len());
+        debug!("{users:?}");
         drop(users);
         self
           .broadcast(ServerMessage::Connected(user.info()), Some(addr))
@@ -111,6 +111,7 @@ impl Server {
           users.remove(&user.addr);
           info!("'{}' left.", user.username);
           info!("{} users connected", users.len());
+          debug!("{users:?}");
         }
         self
           .broadcast(ServerMessage::Disconnected(user.info()), None)
