@@ -19,6 +19,10 @@ use iced::{
 use log::{debug, info};
 use log_pipe::LogPipe;
 
+use once_cell::sync::Lazy;
+
+static SCROLLABLE_ID: Lazy<scrollable::Id> = Lazy::new(scrollable::Id::unique);
+
 const FONT: Font = Font::with_name("Cabin");
 pub fn main() -> anyhow::Result<()> {
   let pipe = LogPipe::new();
@@ -136,12 +140,15 @@ impl Application for App {
           conn::Event::Ready(_) => {}
           conn::Event::Connected => {
             info!("Connected!");
+            return scrollable::snap_to(SCROLLABLE_ID.clone(), scrollable::RelativeOffset::END);
           }
           conn::Event::Joined(user) => {
             info!("{} has joined the room.", user.username);
+            return scrollable::snap_to(SCROLLABLE_ID.clone(), scrollable::RelativeOffset::END);
           }
           conn::Event::Left(user) => {
             info!("{} has left.", user.username);
+            return scrollable::snap_to(SCROLLABLE_ID.clone(), scrollable::RelativeOffset::END);
           }
         },
         Message::Disconnect => {
@@ -184,7 +191,7 @@ impl Application for App {
             })
             .collect(),
         );
-        let logs = scrollable(logs);
+        let logs = scrollable(logs).id(SCROLLABLE_ID.clone());
         let btn = button("Disconnect").on_press(Message::Disconnect);
         column![btn, logs].into()
       }

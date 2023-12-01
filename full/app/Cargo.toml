@@ -15,4 +15,5 @@ flexi_logger = { version = "0.27.3", features = ["async"] }
 futures = "0.3.29"
 iced = "0.10.0"
 log = "0.4.20"
+once_cell = "1.18.0"
 ringbuf = "0.3.3"

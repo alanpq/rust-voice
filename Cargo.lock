@@ -215,6 +215,7 @@ dependencies = [
  "futures",
  "iced",
  "log",
+ "once_cell",
  "ringbuf",
 ]
 
