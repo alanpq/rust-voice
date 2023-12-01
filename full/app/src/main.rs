@@ -34,7 +34,7 @@ const FONT_MONO: Font = Font {
 };
 pub fn main() -> anyhow::Result<()> {
   let pipe = LogPipe::new();
-  let logger = Logger::try_with_str("app=debug,client=debug")?
+  let logger = Logger::try_with_env_or_str("app=debug,client=debug")?
     .log_to_writer(Box::new(pipe.clone()))
     .duplicate_to_stdout(flexi_logger::Duplicate::All)
     .write_mode(WriteMode::Async)
