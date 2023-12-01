@@ -97,6 +97,12 @@ impl AudioHandle {
   }
 }
 
+impl Drop for AudioHandle {
+  fn drop(&mut self) {
+    self.stop();
+  }
+}
+
 fn error(err: cpal::StreamError) {
   error!("{}", err);
 }

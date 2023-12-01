@@ -15,7 +15,7 @@ use iced::{
   executor, font, Alignment, Application, Command, Element, Font, Length, Sandbox, Settings,
   Subscription, Theme,
 };
-use log::info;
+use log::{debug, info};
 use log_pipe::LogPipe;
 
 const FONT: Font = Font::with_name("Cabin");
@@ -103,6 +103,7 @@ impl Application for App {
   }
 
   fn update(&mut self, message: Message) -> Command<Message> {
+    debug!("{message:?}");
     if let Message::Client(conn::Event::Ready(c)) = &message {
       self.connection = Some(c.clone());
     }
@@ -140,6 +141,11 @@ impl Application for App {
           }
         },
         Message::Disconnect => {
+          info!("Disconnecting...");
+          if let Some(ref mut conn) = self.connection {
+            debug!("sending dc");
+            let _ = conn.try_send(conn::Input::Disconnect);
+          }
           self.inner = Inner::default();
         }
         _ => {}

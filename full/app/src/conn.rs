@@ -35,13 +35,14 @@ pub enum Input {
 
 pub enum State {
   Starting,
-  Ready(mpsc::Receiver<Input>),
+  Ready(Option<mpsc::Receiver<Input>>),
   Connected {
     audio: AudioHandle,
     mixer: Arc<PeerMixer>,
     mic: Arc<dyn AudioByteSource>,
 
     client: Client,
+    rx: Option<mpsc::Receiver<Input>>,
   },
 }
 
@@ -51,9 +52,10 @@ impl State {
       State::Starting => {
         let (tx, rx) = mpsc::channel(128);
         let _ = output.send(Event::Ready(tx)).await;
-        *self = State::Ready(rx);
+        *self = State::Ready(Some(rx));
       }
-      State::Ready(rx) => match rx.select_next_some().await {
+      #[allow(clippy::single_match)]
+      State::Ready(rx) => match rx.as_mut().unwrap().select_next_some().await {
         Input::Connect(username, addr) => {
           info!("Connecting...");
           let (audio, mic) = AudioHandle::builder().start().unwrap();
@@ -80,15 +82,17 @@ impl State {
             mixer,
             mic,
             client,
+            rx: rx.take(),
           }
         }
-        Input::Disconnect => todo!(),
+        _ => {}
       },
       State::Connected {
         audio,
         mixer,
         mic,
         client,
+        rx,
       } => {
         futures::select! {
           res = client.next().fuse() => {match res {
@@ -105,6 +109,14 @@ impl State {
             if let Some(samples) = mic {
               let seq_num = client.next_seq();
               client.send(ClientMessage::Voice { seq_num, samples }).await.unwrap();
+            }
+          }
+          msg = rx.as_mut().unwrap().select_next_some() => {
+            match msg {
+              Input::Connect(_, _) => {},
+              Input::Disconnect => {
+                *self = State::Ready(rx.take());
+              },
             }
           }
         }

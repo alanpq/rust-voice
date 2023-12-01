@@ -49,6 +49,6 @@ impl Client {
 
   pub async fn next(&mut self) -> anyhow::Result<ServerMessage> {
     let bytes = self.socket.recv(&mut self.buf).await?;
-    Ok(ServerMessage::from_bytes(&self.buf[..bytes]).context("invalid packet from server")?)
+    ServerMessage::from_bytes(&self.buf[..bytes]).context("invalid packet from server")
   }
 }
