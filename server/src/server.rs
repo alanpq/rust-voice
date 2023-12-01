@@ -1,7 +1,7 @@
 use std::{
   collections::{HashMap, LinkedList},
   net::SocketAddr,
-  sync::Arc,
+  sync::{atomic::AtomicUsize, Arc},
   time::Instant,
 };
 
@@ -35,6 +35,7 @@ pub struct Server {
   pub config: ServerConfig,
   socket: Option<UdpSocket>,
   users: Arc<Mutex<HashMap<SocketAddr, User>>>,
+  counter: Arc<AtomicUsize>,
   running: bool,
 }
 
@@ -44,6 +45,7 @@ impl Server {
       config,
       socket: None,
       users: Arc::new(Mutex::new(HashMap::new())),
+      counter: Arc::new(AtomicUsize::new(0)),
       running: false,
     }
   }
@@ -75,13 +77,16 @@ impl Server {
         }
         let mut users = self.users.lock().await;
         let count = users.len();
+        let id = self
+          .counter
+          .fetch_add(1, std::sync::atomic::Ordering::SeqCst) as u32;
         let user = User {
-          id: count as u32,
+          id,
           username: username.clone(),
           addr,
           last_reply: Instant::now(),
         };
-        info!("'{}' ({}) connected", &username, count);
+        info!("'{}' ({}) connected", &username, id);
         // TODO: change response from pong to something more important
         self.send(addr, ServerMessage::Pong).await.unwrap();
         for u in users.values() {
@@ -105,6 +110,7 @@ impl Server {
           let mut users = self.users.lock().await;
           users.remove(&user.addr);
           info!("'{}' left.", user.username);
+          info!("{} users connected", users.len());
         }
         self
           .broadcast(ServerMessage::Disconnected(user.info()), None)
