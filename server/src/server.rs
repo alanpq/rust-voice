@@ -161,7 +161,8 @@ impl Server {
     );
     info!("Listening on port {}", self.config.port);
 
-    let mut heartbeat = time::interval(self.config.heartbeat_interval);
+    let mut heartbeat = time::interval(self.config.heartbeat_interval)
+      .set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
     let socket = self.socket.as_ref().unwrap();
 
