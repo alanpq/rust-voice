@@ -9,7 +9,7 @@ use common::{
   packets::{self, AudioPacket, ClientMessage, ServerMessage},
   UserInfo,
 };
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use tokio::{net::UdpSocket, select, sync::Mutex, time};
 
 use crate::config::ServerConfig;
@@ -152,8 +152,10 @@ impl Server {
   }
 
   async fn broadcast(&self, command: ServerMessage, ignore: Option<SocketAddr>) {
+    trace!("broadcast: {command:?}");
     for (addr, user) in self.users.lock().await.iter() {
       if Some(addr) == ignore.as_ref() {
+        trace!(" - ignoring '{addr}'");
         return;
       }
       self.send(*addr, command.clone()).await.unwrap();
