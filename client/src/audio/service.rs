@@ -20,10 +20,12 @@ impl AudioService {
     while let Ok(m) = self.rx.recv() {
       match m {
         Message::Play => {
-          self.input_stream.play();
+          let _ = self.input_stream.play();
+          let _ = self.output_stream.play();
         }
         Message::Pause => {
-          self.input_stream.pause();
+          let _ = self.input_stream.pause();
+          let _ = self.output_stream.pause();
         }
         Message::Stop => {
           return;
