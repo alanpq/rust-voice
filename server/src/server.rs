@@ -156,7 +156,7 @@ impl Server {
     for (addr, user) in self.users.lock().await.iter() {
       if Some(addr) == ignore.as_ref() {
         trace!(" - ignoring '{addr}'");
-        return;
+        continue;
       }
       self.send(*addr, command.clone()).await.unwrap();
     }
