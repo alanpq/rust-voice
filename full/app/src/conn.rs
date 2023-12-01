@@ -48,7 +48,7 @@ pub enum State {
 }
 
 impl State {
-  pub async fn run(&mut self, output: &mut Sender<Event>) {
+  pub async fn run(&mut self, output: &mut Sender<Event>) -> anyhow::Result<()> {
     match self {
       State::Starting => {
         let (tx, rx) = mpsc::channel(128);
@@ -59,7 +59,9 @@ impl State {
       State::Ready(rx) => match rx.as_mut().unwrap().select_next_some().await {
         Input::Connect(username, addr) => {
           info!("Connecting...");
-          let (audio, mic) = AudioHandle::builder().start().unwrap();
+          let (audio, mic) = AudioHandle::builder()
+            .start()
+            .context("could not start audio thread")?;
           audio.play();
           let mixer = Arc::new(PeerMixer::new(
             audio.out_cfg().sample_rate.0,
@@ -67,13 +69,13 @@ impl State {
           ));
           audio.add_source(mixer.clone());
 
-          let mic = Arc::new(OpusEncoder::new(mic).expect("failed to create encoder"));
+          let mic = Arc::new(OpusEncoder::new(mic).context("failed to create encoder")?);
 
-          let mut client = Client::new()
+          let mut client = Client::new().await.context("could not create client")?;
+          client
+            .connect(addr, username)
             .await
-            .context("could not create client")
-            .unwrap();
-          client.connect(addr, username).await.unwrap();
+            .context("could not connect")?;
           // info!("Connecting to {:?}...", socket.peer_addr().unwrap());
 
           info!("Connected!");
@@ -110,10 +112,10 @@ impl State {
           mic = mic.next().fuse() => {
             if let Some(samples) = mic {
               let seq_num = client.next_seq();
-              client.send(ClientMessage::Voice { seq_num, samples }).await.unwrap();
+              client.send(ClientMessage::Voice { seq_num, samples }).await?;
             }
           }
-          msg = rx.as_mut().unwrap().select_next_some() => {
+          msg = rx.as_mut().context("no msg rx")?.select_next_some() => {
             match msg {
               Input::Connect(_, _) => {},
               Input::Disconnect => {
@@ -124,6 +126,7 @@ impl State {
         }
       }
     }
+    Ok(())
   }
 }
 
@@ -133,7 +136,9 @@ pub fn client() -> Subscription<Event> {
     let mut state = State::Starting;
 
     loop {
-      state.run(&mut output).await;
+      if let Err(e) = state.run(&mut output).await {
+        error!("{e:?}");
+      }
     }
   })
 }
