@@ -305,3 +305,9 @@ impl AudioServiceBuilder {
     ))
   }
 }
+
+impl Default for AudioServiceBuilder {
+  fn default() -> Self {
+    Self::new()
+  }
+}
