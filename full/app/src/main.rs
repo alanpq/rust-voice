@@ -1,3 +1,4 @@
+mod async_drop;
 mod client;
 mod conn;
 mod log_pipe;

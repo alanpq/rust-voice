@@ -8,10 +8,10 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.75"
 async-std = "1.12.0"
-bincode = "1.3.3"
+async-trait = "0.1.74"
 client = { path = "../../client" }
 common = { path = "../../common" }
-flexi_logger = {version = "0.27.3", features = ["async"]}
+flexi_logger = { version = "0.27.3", features = ["async"] }
 futures = "0.3.29"
 iced = "0.10.0"
 log = "0.4.20"

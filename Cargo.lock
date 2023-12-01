@@ -208,7 +208,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-std",
- "bincode",
+ "async-trait",
  "client",
  "common",
  "flexi_logger 0.27.3",
