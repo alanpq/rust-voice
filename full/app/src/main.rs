@@ -9,14 +9,16 @@ use std::net::SocketAddr;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 
+use anyhow::Context;
 use conn::Connection;
+use dns_lookup::lookup_host;
 use flexi_logger::{Logger, LoggerHandle, WriteMode};
 use iced::widget::{button, column, row, scrollable, text, text_input, Column};
 use iced::{
   executor, font, Alignment, Application, Command, Element, Font, Length, Sandbox, Settings,
   Subscription, Theme,
 };
-use log::{debug, info};
+use log::{debug, error, info};
 use log_pipe::LogPipe;
 
 use once_cell::sync::Lazy;
@@ -130,8 +132,28 @@ impl Application for App {
         Message::Connect => {
           if let Some(ref mut conn) = &mut self.connection {
             info!("Connecting...");
-            conn.try_send(conn::Input::Connect(self.username.clone(), self.address.parse().unwrap())).unwrap(/* FIXME: remove this */);
-            self.inner = Inner::Connecting;
+            match self
+              .address
+              .parse::<SocketAddr>()
+              .context("could not parse socket addr")
+              .or_else(|e| {
+                debug!("{e} - trying dns resolution...");
+                let split = self.address.splitn(2, ':').collect::<Vec<_>>();
+                let host = split.first().context("could not get first in split")?;
+                let port: u16 = split.get(1).and_then(|p| p.parse().ok()).unwrap_or(1234); // TODO: change default port
+                let lookup = lookup_host(host).context("could not lookup host")?;
+                let ip = lookup.first().context("no resolved ips")?;
+                Ok::<_, anyhow::Error>(SocketAddr::new(*ip, port))
+              }) {
+              Ok(addr) => {
+                debug!("Connecting to '{addr}'...");
+                conn.try_send(conn::Input::Connect(self.username.clone(), addr)).unwrap(/* FIXME: remove this */);
+                self.inner = Inner::Connecting;
+              }
+              Err(e) => {
+                error!("Invalid address: {e}");
+              }
+            }
           }
         }
         Message::SetAddress(addr) => {
@@ -143,11 +165,13 @@ impl Application for App {
         Message::FontLoaded(_) => {}
         _ => {}
       },
-      Inner::Connecting => {
-        if let Message::Client(conn::Event::Connected) = message {
-          self.inner = Inner::Connected {}
+      Inner::Connecting => match message {
+        Message::Client(conn::Event::Connected) => self.inner = Inner::Connected {},
+        Message::Disconnect => {
+          self.inner = Inner::default();
         }
-      }
+        _ => (),
+      },
       Inner::Connected {} => match message {
         Message::Client(c) => match c {
           conn::Event::Ready(_) => {}
@@ -188,7 +212,11 @@ impl Application for App {
         ];
         column![username, conn_widget].padding(20).into()
       }
-      Inner::Connecting => text("Connecting...").into(),
+      Inner::Connecting => column![
+        text("Connecting..."),
+        button("Cancel").on_press(Message::Disconnect)
+      ]
+      .into(),
       Inner::Connected {} => {
         let logs = Column::with_children(
           self
