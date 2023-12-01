@@ -24,6 +24,12 @@ use once_cell::sync::Lazy;
 static SCROLLABLE_ID: Lazy<scrollable::Id> = Lazy::new(scrollable::Id::unique);
 
 const FONT: Font = Font::with_name("Cabin");
+const FONT_MONO: Font = Font {
+  family: font::Family::Name("Martian Mono"),
+  monospaced: true,
+  stretch: font::Stretch::Normal,
+  weight: font::Weight::Normal,
+};
 pub fn main() -> anyhow::Result<()> {
   let pipe = LogPipe::new();
   let logger = Logger::try_with_str("app=debug,client=debug")?
@@ -98,7 +104,11 @@ impl Application for App {
         address: std::env::var("ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
         username: std::env::var("USER").unwrap_or_default(),
       },
-      font::load(include_bytes!("../fonts/Cabin-Regular.ttf").as_slice()).map(Message::FontLoaded),
+      Command::batch(vec![
+        font::load(include_bytes!("../fonts/Cabin-Regular.ttf").as_slice()),
+        font::load(include_bytes!("../fonts/MartianMono-Regular.ttf").as_slice()),
+      ])
+      .map(Message::FontLoaded),
     )
   }
 
@@ -186,14 +196,14 @@ impl Application for App {
             .get()
             .iter()
             .map(|m| {
-              row![
-                text(format!("{}", m.level)).width(Length::Fixed(60.0)),
-                text(format!("{}", m.body)),
-              ]
-              .into()
+              text(format!("{:>5}: {}", m.level, m.body))
+                .font(FONT_MONO)
+                .size(12)
+                .into()
             })
             .collect(),
-        );
+        )
+        .width(Length::Fill);
         let logs = scrollable(logs).id(SCROLLABLE_ID.clone());
         let btn = button("Disconnect").on_press(Message::Disconnect);
         column![btn, logs].into()
