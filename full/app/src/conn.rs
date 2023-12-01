@@ -17,7 +17,7 @@ use lib::{
 };
 use log::{error, info, trace, warn};
 
-use crate::client::Client;
+use crate::{async_drop::Dropper, client::Client};
 
 pub type Connection = mpsc::Sender<Input>;
 
@@ -41,7 +41,7 @@ pub enum State {
     mixer: Arc<PeerMixer>,
     mic: Arc<dyn AudioByteSource>,
 
-    client: Client,
+    client: Dropper<Client>,
     rx: Option<mpsc::Receiver<Input>>,
   },
 }
@@ -81,7 +81,7 @@ impl State {
             audio,
             mixer,
             mic,
-            client,
+            client: client.into(),
             rx: rx.take(),
           }
         }

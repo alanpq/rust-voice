@@ -1,35 +1,39 @@
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-use crate::{UserInfo, PeerID};
+use crate::{PeerID, UserInfo};
 
 pub const PACKET_MAX_SIZE: usize = 32_768;
 
-#[derive(Clone)]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMessage {
   /// request to connect to a server
-  Connect { username: String },
+  Connect {
+    username: String,
+  },
+  Disconnect,
   Ping,
   /// send voice to the server
-  Voice { seq_num: SeqNum, samples: Vec<u8> },
+  Voice {
+    seq_num: SeqNum,
+    samples: Vec<u8>,
+  },
 }
 
 impl ClientMessage {
-  pub fn to_bytes(&self) -> Vec<u8> {
-    bincode::serialize(self).unwrap()
+  pub fn to_bytes(&self) -> Result<Vec<u8>, Box<bincode::ErrorKind>> {
+    bincode::serialize(self)
   }
   pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
     bincode::deserialize(bytes).ok()
   }
 }
 
-#[derive(Clone)]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ServerMessage {
   Pong,
   /// a user connected
-  Connected (UserInfo),
+  Connected(UserInfo),
   /// voice packet from a user
   Voice(AudioPacket<u8>),
 }
@@ -43,11 +47,10 @@ impl ServerMessage {
   }
 }
 
-use std::{cmp::Ordering, ops, fmt::Display};
+use std::{cmp::Ordering, fmt::Display, ops};
 
 #[repr(transparent)]
-#[derive(PartialEq, Clone, Copy)]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct SeqNum(pub u16);
 
 impl SeqNum {
@@ -82,12 +85,12 @@ impl ops::Add<u16> for SeqNum {
 }
 impl ops::AddAssign for SeqNum {
   fn add_assign(&mut self, rhs: Self) {
-    self.0 += rhs.0   
+    self.0 += rhs.0
   }
 }
 impl ops::AddAssign<u16> for SeqNum {
   fn add_assign(&mut self, rhs: u16) {
-    self.0 += rhs   
+    self.0 += rhs
   }
 }
 
@@ -96,12 +99,13 @@ impl Eq for SeqNum {}
 impl Ord for SeqNum {
   fn cmp(&self, other: &Self) -> Ordering {
     let (a, b) = (self.0, other.0);
-    if a == b { return Ordering::Equal; }
-    
-    const HALF: u16 = u16::MAX/2;
-    if (a > b && a - b <= HALF )
-      || (a < b && b - a > HALF) {
-        return Ordering::Greater;
+    if a == b {
+      return Ordering::Equal;
+    }
+
+    const HALF: u16 = u16::MAX / 2;
+    if (a > b && a - b <= HALF) || (a < b && b - a > HALF) {
+      return Ordering::Greater;
     }
     Ordering::Less
   }
@@ -118,7 +122,7 @@ mod tests {
   use super::SeqNum;
 
   fn greater_than<S: Into<SeqNum>>(a: S, b: S, greater_than: bool) {
-    let (a,b): (SeqNum, SeqNum) = (a.into(), b.into());
+    let (a, b): (SeqNum, SeqNum) = (a.into(), b.into());
     assert_eq!(a > b, greater_than);
     assert_eq!(a < b, !greater_than);
   }
@@ -134,9 +138,8 @@ mod tests {
 }
 
 // FIXME: everything is f32 for now
-#[derive(Clone)]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AudioPacket<T = f32> { 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AudioPacket<T = f32> {
   pub seq_num: SeqNum,
   pub peer_id: PeerID,
   pub data: Vec<T>,
@@ -144,7 +147,10 @@ pub struct AudioPacket<T = f32> {
 
 pub const FRAME_SIZE: usize = 1920;
 #[derive(Copy, Clone, Debug)]
-pub struct AudioFrame<T = f32> where T: Copy {
+pub struct AudioFrame<T = f32>
+where
+  T: Copy,
+{
   pub seq_num: SeqNum,
   pub data: [T; FRAME_SIZE],
 }
@@ -176,14 +182,15 @@ impl PartialOrd for AudioFrame {
   }
 }
 
-
 impl TryFrom<AudioPacket> for AudioFrame {
   type Error = bool;
 
   fn try_from(value: AudioPacket) -> Result<Self, Self::Error> {
     Ok(AudioFrame {
       seq_num: value.seq_num,
-      data: value.data[..PACKET_MAX_SIZE.min(value.data.len())].try_into().map_err(|v: _| false)?,
+      data: value.data[..PACKET_MAX_SIZE.min(value.data.len())]
+        .try_into()
+        .map_err(|v: _| false)?,
     })
   }
 }

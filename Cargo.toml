@@ -1,12 +1,6 @@
 [workspace]
 resolver = "2"
-members = [
-  "client",
+members = ["client", "common", "server", "full/curses", "full/app"]
 
-  "common",
-  
-  "server",
-
-  "full/curses",
-  "full/app",
-]
+[profile.release]
+debug = 1

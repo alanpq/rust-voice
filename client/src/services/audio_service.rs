@@ -115,7 +115,7 @@ fn make_input_stream(
   let data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
     for sample in data.iter().step_by(config.channels as usize) {
       if let Err(e) = mic_tx.try_send(*sample) {
-        warn!("failed to send mic data to mic_tx: {:?}", e);
+        // warn!("failed to send mic data to mic_tx: {:?}", e);
       }
     }
   };

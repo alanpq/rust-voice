@@ -2,9 +2,13 @@ use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::{bail, Context};
 use async_std::net::UdpSocket;
+use async_trait::async_trait;
 use client::{services::PeerMixer, source::AudioByteSource};
 use common::packets::{self, ClientMessage, SeqNum, ServerMessage};
+use futures::executor::block_on;
 use log::trace;
+
+use crate::async_drop::AsyncDrop;
 
 pub struct Client {
   seq_num: SeqNum,
@@ -41,7 +45,7 @@ impl Client {
   }
 
   pub async fn send(&self, msg: ClientMessage) -> anyhow::Result<()> {
-    let pak = bincode::serialize(&msg)?;
+    let pak = msg.to_bytes()?;
     self.socket.send(&pak).await?;
     trace!("-> {} bytes", pak.len());
     Ok(())
@@ -50,5 +54,12 @@ impl Client {
   pub async fn next(&mut self) -> anyhow::Result<ServerMessage> {
     let bytes = self.socket.recv(&mut self.buf).await?;
     ServerMessage::from_bytes(&self.buf[..bytes]).context("invalid packet from server")
+  }
+}
+
+#[async_trait]
+impl AsyncDrop for Client {
+  async fn async_drop(&mut self) {
+    let _ = self.send(ClientMessage::Disconnect).await;
   }
 }
