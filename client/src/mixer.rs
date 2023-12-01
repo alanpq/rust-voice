@@ -7,7 +7,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use log::warn;
+use log::{error, warn};
 use ringbuf::{HeapConsumer, HeapProducer, HeapRb};
 
 use crate::{latency::Latency, opus::OpusDecoder, source::AudioSource};
@@ -85,7 +85,9 @@ impl PeerMixer {
     let mut decoder_map = self.decoder_map.write().unwrap();
     if decoder_map.contains_key(&id) {
       warn!("peer {} already exists", id);
-      decoder_map.get_mut(&id).unwrap().reset();
+      if let Err(e) = decoder_map.get_mut(&id).unwrap().reset() {
+        error!("could not reset opus decoder state: {e}");
+      }
       return;
     }
 

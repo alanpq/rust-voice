@@ -1,22 +1,15 @@
 use std::{
   net::{ToSocketAddrs, UdpSocket},
-  sync::{
-    mpsc::{Receiver, Sender},
-    Arc, Mutex,
-  },
-  time::Instant,
+  sync::{mpsc::Sender, Arc, Mutex},
 };
 
-use crate::{
-  opus::OpusEncoder,
-  source::{AudioByteSource, AudioSource},
-};
+use crate::source::AudioByteSource;
 use common::{
   packets::{self, AudioPacket, ServerMessage},
   UserInfo,
 };
 use crossbeam::channel;
-use log::{debug, error, info, trace};
+use log::{error, info, trace};
 use tracing::{span, Level};
 
 pub struct Client {
@@ -90,8 +83,6 @@ impl Client {
         error!("Failed to connect to server: {}", e);
       }
     }
-
-    // self.socket.set_nonblocking(true);
   }
 
   pub async fn service(&self) {

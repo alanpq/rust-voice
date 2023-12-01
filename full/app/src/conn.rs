@@ -1,18 +1,17 @@
 use std::{any::TypeId, net::SocketAddr, sync::Arc};
 
 use anyhow::Context;
-use async_std::net::UdpSocket;
 use common::{
-  packets::{self, AudioPacket, ClientMessage, SeqNum, ServerMessage},
+  packets::{ClientMessage, ServerMessage},
   UserInfo,
 };
 use futures::{channel::mpsc::Sender, FutureExt as _, StreamExt as _};
 use iced::{
-  futures::{channel::mpsc, lock::Mutex, SinkExt as _},
+  futures::{channel::mpsc, SinkExt as _},
   subscription, Subscription,
 };
 use lib::{audio::AudioHandle, mixer::PeerMixer, opus::OpusEncoder, source::AudioByteSource};
-use log::{error, info, trace, warn};
+use log::{error, info};
 
 use crate::{async_drop::Dropper, client::Client};
 
@@ -88,11 +87,11 @@ impl State {
         _ => {}
       },
       State::Connected {
-        audio,
         mixer,
         mic,
         client,
         rx,
+        ..
       } => {
         futures::select! {
           res = client.next().fuse() => {match res {

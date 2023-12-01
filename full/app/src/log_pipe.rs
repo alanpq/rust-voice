@@ -55,7 +55,7 @@ impl Default for LogPipe {
 }
 
 impl LogWriter for LogPipe {
-  fn write(&self, now: &mut DeferredNow, record: &Record<'_>) -> std::io::Result<()> {
+  fn write(&self, _now: &mut DeferredNow, record: &Record<'_>) -> std::io::Result<()> {
     let mut producer = self.producer.lock().unwrap();
     let _ = producer.push(LogRecord {
       level: record.level(),

@@ -46,8 +46,8 @@ impl OpusDecoder {
     Ok(output)
   }
 
-  pub fn reset(&self) {
+  pub fn reset(&self) -> opus::Result<()> {
     let mut decoder = self.decoder.lock().unwrap();
-    decoder.reset_state();
+    decoder.reset_state()
   }
 }

@@ -1,4 +1,3 @@
-use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::{PeerID, UserInfo};
@@ -191,7 +190,7 @@ impl TryFrom<AudioPacket> for AudioFrame {
       seq_num: value.seq_num,
       data: value.data[..PACKET_MAX_SIZE.min(value.data.len())]
         .try_into()
-        .map_err(|v: _| false)?,
+        .map_err(|_v: _| false)?,
     })
   }
 }

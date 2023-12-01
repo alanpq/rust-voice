@@ -1,5 +1,5 @@
 use std::{
-  collections::{HashMap, LinkedList},
+  collections::HashMap,
   net::SocketAddr,
   sync::{atomic::AtomicUsize, Arc},
   time::Instant,
@@ -153,7 +153,7 @@ impl Server {
 
   async fn broadcast(&self, command: ServerMessage, ignore: Option<SocketAddr>) {
     trace!("broadcast: {command:?}");
-    for (addr, user) in self.users.lock().await.iter() {
+    for (addr, _user) in self.users.lock().await.iter() {
       if Some(addr) == ignore.as_ref() {
         trace!(" - ignoring '{addr}'");
         continue;

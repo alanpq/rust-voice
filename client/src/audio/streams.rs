@@ -13,9 +13,7 @@ pub(super) fn make_input_stream(
 ) -> Result<cpal::Stream, cpal::BuildStreamError> {
   let data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
     for sample in data.iter().step_by(config.channels as usize) {
-      if let Err(e) = mic_tx.try_send(*sample) {
-        // warn!("failed to send mic data to mic_tx: {:?}", e);
-      }
+      let _ = mic_tx.try_send(*sample); // TODO: add stats here
     }
   };
   device.build_input_stream(&config, data_fn, error, None)
@@ -32,7 +30,12 @@ pub(super) fn make_output_stream(
       for i in 0..data.len() / channels {
         let sample = block_on(async {
           let mut sample = 0.0;
-          let sources = sources.lock().unwrap();
+
+          // TODO: this probably sucks, either make this an async mutex or kill yourself idk
+          let sources: Vec<_> = {
+            let sources = sources.lock().unwrap();
+            sources.iter().cloned().collect()
+          };
           for s in sources.iter() {
             if let Some(s) = s.next().await {
               sample += s;

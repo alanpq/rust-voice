@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use crate::server::Server;
-
 pub struct ServerConfig {
   pub port: u16,
   /// Time before a user is disconnected.
@@ -17,5 +15,11 @@ impl ServerConfig {
       timeout: Duration::from_secs(100),
       heartbeat_interval: Duration::from_secs(1),
     }
+  }
+}
+
+impl Default for ServerConfig {
+  fn default() -> Self {
+    Self::new()
   }
 }

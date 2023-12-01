@@ -1,5 +1,7 @@
 use std::sync::{mpsc, Arc};
 
+use log::error;
+
 use crate::{source::AudioSource, Latency};
 
 use super::{AudioServiceBuilder, AudioSources, Message};
@@ -22,15 +24,21 @@ impl AudioHandle {
   }
 
   pub fn play(&self) {
-    self.tx.send(Message::Play);
+    if let Err(e) = self.tx.send(Message::Play) {
+      error!("could not play - {e:?}")
+    }
   }
 
   pub fn pause(&self) {
-    self.tx.send(Message::Pause);
+    if let Err(e) = self.tx.send(Message::Pause) {
+      error!("could not pause - {e:?}")
+    }
   }
 
   pub fn stop(&self) {
-    self.tx.send(Message::Stop);
+    if let Err(e) = self.tx.send(Message::Stop) {
+      error!("could not stop - {e:?}")
+    }
   }
 
   pub fn add_source(&self, source: Arc<dyn AudioSource>) {

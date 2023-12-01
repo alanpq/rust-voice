@@ -5,21 +5,17 @@ mod log_pipe;
 
 extern crate client as lib;
 
-use std::net::SocketAddr;
-use std::sync::mpsc::channel;
-use std::sync::Arc;
-
 use anyhow::Context;
 use conn::Connection;
 use dns_lookup::lookup_host;
 use flexi_logger::{Logger, LoggerHandle, WriteMode};
 use iced::widget::{button, column, row, scrollable, text, text_input, Column};
 use iced::{
-  executor, font, Alignment, Application, Command, Element, Font, Length, Sandbox, Settings,
-  Subscription, Theme,
+  executor, font, Application, Command, Element, Font, Length, Settings, Subscription, Theme,
 };
 use log::{debug, error, info};
 use log_pipe::LogPipe;
+use std::net::SocketAddr;
 
 use once_cell::sync::Lazy;
 
@@ -64,6 +60,7 @@ impl Default for Inner {
 
 struct App {
   log: LogPipe,
+  #[allow(dead_code)]
   logger: LoggerHandle,
   inner: Inner,
 
