@@ -44,16 +44,13 @@ pub fn main() -> anyhow::Result<()> {
 }
 
 enum Inner {
-  Home { address: String, username: String },
+  Home {},
   Connecting,
   Connected {},
 }
 impl Default for Inner {
   fn default() -> Self {
-    Self::Home {
-      address: std::env::var("ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
-      username: "user".to_string(),
-    }
+    Self::Home {}
   }
 }
 
@@ -61,6 +58,9 @@ struct App {
   log: LogPipe,
   logger: LoggerHandle,
   inner: Inner,
+
+  address: String,
+  username: String,
 
   connection: Option<Connection>,
 }
@@ -94,6 +94,9 @@ impl Application for App {
         logger: flags.logger.unwrap(),
         inner: Inner::default(),
         connection: None,
+
+        address: std::env::var("ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
+        username: std::env::var("USER").unwrap_or_default(),
       },
       font::load(include_bytes!("../fonts/Cabin-Regular.ttf").as_slice()).map(Message::FontLoaded),
     )
@@ -113,19 +116,19 @@ impl Application for App {
       self.connection = Some(c.clone());
     }
     match &mut self.inner {
-      Inner::Home { address, username } => match message {
+      Inner::Home {} => match message {
         Message::Connect => {
           if let Some(ref mut conn) = &mut self.connection {
             info!("Connecting...");
-            conn.try_send(conn::Input::Connect(username.clone(), address.parse().unwrap())).unwrap(/* FIXME: remove this */);
+            conn.try_send(conn::Input::Connect(self.username.clone(), self.address.parse().unwrap())).unwrap(/* FIXME: remove this */);
             self.inner = Inner::Connecting;
           }
         }
         Message::SetAddress(addr) => {
-          *address = addr;
+          self.address = addr;
         }
         Message::SetUsername(usr) => {
-          *username = usr;
+          self.username = usr;
         }
         Message::FontLoaded(_) => {}
         _ => {}
@@ -167,10 +170,10 @@ impl Application for App {
 
   fn view(&self) -> Element<Message> {
     match &self.inner {
-      Inner::Home { address, username } => {
-        let username = text_input("Username", username).on_input(Message::SetUsername);
+      Inner::Home {} => {
+        let username = text_input("Username", &self.username).on_input(Message::SetUsername);
         let conn_widget = row![
-          text_input("Address", address).on_input(Message::SetAddress),
+          text_input("Address", &self.address).on_input(Message::SetAddress),
           button("Connect").on_press(Message::Connect)
         ];
         column![username, conn_widget].padding(20).into()
