@@ -3,8 +3,6 @@ use std::{
   ops::{Deref, DerefMut},
 };
 
-use log::warn;
-
 #[async_trait::async_trait]
 pub trait AsyncDrop {
   async fn async_drop(&mut self);
@@ -54,14 +52,10 @@ impl<T: AsyncDrop + Send + 'static> Drop for Dropper<T> {
         inner: MaybeUninit::uninit(),
       };
       std::mem::swap(&mut this, self);
+      this.dropped = true;
 
       // TODO: figure out executor confusion (iced, async_std, etc)
       async_std::task::spawn(async move {
-        if this.dropped {
-          // TODO: maybe panic here, idk
-          warn!("AsyncDrop attempted double free?");
-          return;
-        }
         // Safety: the only uninit exists in the Drop impl for Dropper, so as long as !this.dropped, we can assume_init
         let inner = unsafe { this.inner.assume_init_mut() };
         inner.async_drop().await;
