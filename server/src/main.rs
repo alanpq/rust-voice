@@ -5,13 +5,14 @@ mod config;
 mod server;
 
 #[derive(Parser, Debug)]
-#[clap(name="Rust Voice Server")]
+#[clap(name = "Rust Voice Server")]
 struct Args {
   #[clap(value_parser = clap::value_parser!(u16).range(1..), short='p', long="port", default_value_t=8080)]
   port: u16,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
   env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
   let args = Args::parse();
@@ -22,5 +23,6 @@ fn main() {
     timeout: std::time::Duration::from_secs(3),
   };
   let mut server = server::Server::new(config);
-  server.start();
+  server.start().await;
+  Ok(())
 }
