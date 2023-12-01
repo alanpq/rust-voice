@@ -11,10 +11,7 @@ use iced::{
   futures::{channel::mpsc, lock::Mutex, SinkExt as _},
   subscription, Subscription,
 };
-use lib::{
-  services::{AudioHandle, OpusEncoder, PeerMixer},
-  source::AudioByteSource,
-};
+use lib::{audio::AudioHandle, mixer::PeerMixer, opus::OpusEncoder, source::AudioByteSource};
 use log::{error, info, trace, warn};
 
 use crate::{async_drop::Dropper, client::Client};

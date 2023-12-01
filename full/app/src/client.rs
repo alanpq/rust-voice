@@ -1,9 +1,8 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 
 use anyhow::{bail, Context};
 use async_std::net::UdpSocket;
 use async_trait::async_trait;
-use client::{services::PeerMixer, source::AudioByteSource};
 use common::packets::{self, ClientMessage, SeqNum, ServerMessage};
 use log::{debug, trace};
 

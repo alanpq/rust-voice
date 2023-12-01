@@ -13,9 +13,7 @@ use std::{
 };
 
 use client::{
-  client::Client,
-  services::{AudioHandle, OpusEncoder, PeerMixer},
-  source::AudioMpsc,
+  audio::AudioHandle, client::Client, mixer::PeerMixer, opus::OpusEncoder, source::AudioMpsc,
 };
 use common::{
   packets::{self, AudioPacket, ClientMessage},

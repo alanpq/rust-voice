@@ -6,8 +6,8 @@ use futures::lock::Mutex;
 use log::{info, warn};
 
 use crate::{
+  opus::util::nearest_opus_rate,
   source::{AudioByteSource, AudioSource},
-  util::opus::nearest_opus_rate,
 };
 
 pub struct OpusEncoder<S: AudioSource> {

@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-  services::OpusEncoder,
+  opus::OpusEncoder,
   source::{AudioByteSource, AudioSource},
 };
 use common::{

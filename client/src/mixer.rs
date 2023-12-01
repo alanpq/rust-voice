@@ -2,24 +2,15 @@ use std::{
   collections::HashMap,
   sync::{
     atomic::{AtomicUsize, Ordering},
-    mpsc::Sender,
     Arc, Mutex, RwLock,
   },
-  time::{Duration, Instant},
 };
 
 use async_trait::async_trait;
 use log::warn;
 use ringbuf::{HeapConsumer, HeapProducer, HeapRb};
 
-use super::OpusDecoder;
-use crate::{latency::Latency, source::AudioSource};
-use core::pin::Pin;
-use futures::{
-  sink::Sink,
-  stream::Stream,
-  task::{Context, Poll},
-};
+use crate::{latency::Latency, opus::OpusDecoder, source::AudioSource};
 
 const EXPECTED_PEERS: usize = 4;
 
