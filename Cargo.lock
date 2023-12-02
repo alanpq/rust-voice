@@ -860,6 +860,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "log",
+ "num-traits",
  "serde",
 ]
 
@@ -1849,6 +1850,7 @@ dependencies = [
  "futures",
  "iced_core",
  "log",
+ "tokio",
  "wasm-bindgen-futures",
  "wasm-timer",
 ]
