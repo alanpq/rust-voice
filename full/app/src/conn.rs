@@ -10,7 +10,12 @@ use iced::{
   futures::{channel::mpsc, SinkExt as _},
   subscription, Subscription,
 };
-use lib::{audio::AudioHandle, mixer::PeerMixer, opus::OpusEncoder, source::AudioByteSource};
+use lib::{
+  audio::{AudioHandle, Statistics},
+  mixer::PeerMixer,
+  opus::OpusEncoder,
+  source::AudioByteSource,
+};
 use log::{error, info};
 
 use crate::{async_drop::Dropper, client::Client};
@@ -20,6 +25,7 @@ pub type Connection = mpsc::Sender<Input>;
 #[derive(Debug, Clone)]
 pub enum Event {
   Ready(Connection),
+  AudioStart(Arc<Statistics>),
   Connected,
   Joined(UserInfo),
   Left(UserInfo),
@@ -58,6 +64,7 @@ impl State {
           let (audio, mic) = AudioHandle::builder()
             .start()
             .context("could not start audio thread")?;
+          let _ = output.send(Event::AudioStart(audio.stats.clone())).await;
           audio.play();
           let mixer = Arc::new(PeerMixer::new(
             audio.out_cfg().sample_rate.0,

@@ -6,16 +6,20 @@ mod log_pipe;
 extern crate client as lib;
 
 use anyhow::Context;
+use common::Average;
 use conn::Connection;
 use dns_lookup::lookup_host;
 use flexi_logger::{Logger, LoggerHandle, WriteMode};
 use iced::widget::{button, column, row, scrollable, text, text_input, Column};
 use iced::{
-  executor, font, Application, Command, Element, Font, Length, Settings, Subscription, Theme,
+  executor, font, subscription, Application, Command, Element, Font, Length, Settings,
+  Subscription, Theme,
 };
+use lib::audio::Statistics;
 use log::{debug, error, info};
 use log_pipe::LogPipe;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use once_cell::sync::Lazy;
 
@@ -68,6 +72,9 @@ struct App {
   username: String,
 
   connection: Option<Connection>,
+  audio_stats: Option<Arc<Statistics>>,
+  last_pushed_samples: Option<(usize, std::time::Instant)>,
+  out_samples_per_sec: Average<20, f32>,
 }
 
 #[derive(Default)]
@@ -84,6 +91,7 @@ enum Message {
   SetUsername(String),
   FontLoaded(Result<(), font::Error>),
   Client(conn::Event),
+  Clock(std::time::Instant),
 }
 
 impl Application for App {
@@ -99,6 +107,9 @@ impl Application for App {
         logger: flags.logger.unwrap(),
         inner: Inner::default(),
         connection: None,
+        audio_stats: None,
+        last_pushed_samples: None,
+        out_samples_per_sec: Default::default(),
 
         address: std::env::var("ADDRESS").unwrap_or_else(|_| "gs.alanp.me".to_string()),
         username: std::env::var("USER").unwrap_or_default(),
@@ -116,13 +127,32 @@ impl Application for App {
   }
 
   fn subscription(&self) -> Subscription<Self::Message> {
-    conn::client().map(Message::Client)
+    Subscription::batch(vec![
+      conn::client().map(Message::Client),
+      iced::time::every(std::time::Duration::from_millis(100)).map(Message::Clock),
+    ])
   }
 
   fn update(&mut self, message: Message) -> Command<Message> {
-    debug!("{message:?}");
-    if let Message::Client(conn::Event::Ready(c)) = &message {
-      self.connection = Some(c.clone());
+    // debug!("{message:?}");
+    match &message {
+      Message::Client(conn::Event::Ready(c)) => {
+        self.connection = Some(c.clone());
+      }
+      Message::Client(conn::Event::AudioStart(stats)) => {
+        self.audio_stats = Some(stats.clone());
+      }
+      Message::Clock(now) => {
+        if let Some(stats) = &self.audio_stats {
+          let now = (stats.pushed_output_samples(), *now);
+          if let Some(then) = self.last_pushed_samples.replace(now) {
+            self
+              .out_samples_per_sec
+              .push((now.0 - then.0) as f32 / (now.1.duration_since(then.1).as_secs_f32()));
+          }
+        }
+      }
+      _ => {}
     }
     match &mut self.inner {
       Inner::Home {} => match message {
@@ -171,7 +201,6 @@ impl Application for App {
       },
       Inner::Connected {} => match message {
         Message::Client(c) => match c {
-          conn::Event::Ready(_) => {}
           conn::Event::Connected => {
             info!("Connected!");
             return scrollable::snap_to(SCROLLABLE_ID.clone(), scrollable::RelativeOffset::END);
@@ -184,6 +213,7 @@ impl Application for App {
             info!("{} has left.", user.username);
             return scrollable::snap_to(SCROLLABLE_ID.clone(), scrollable::RelativeOffset::END);
           }
+          _ => {}
         },
         Message::Disconnect => {
           info!("Disconnecting...");
@@ -231,7 +261,32 @@ impl Application for App {
         .width(Length::Fill);
         let logs = scrollable(logs).id(SCROLLABLE_ID.clone());
         let btn = button("Disconnect").on_press(Message::Disconnect);
-        column![btn, logs].into()
+
+        let sidebar = match &self.audio_stats {
+          Some(stats) => scrollable(column![
+            text("Input:").font(FONT_MONO),
+            text(format!(
+              "  Dropped samples: {}",
+              stats.dropped_mic_samples()
+            ))
+            .font(FONT_MONO),
+            text("Output:").font(FONT_MONO),
+            text(format!(
+              "  Samples/sec: {:.3}",
+              self.out_samples_per_sec.avg::<f32>()
+            ))
+            .font(FONT_MONO),
+          ]),
+          None => scrollable(column![text("no audio thread running")]),
+        };
+        column![
+          btn,
+          row![
+            logs.width(Length::FillPortion(2)),
+            sidebar.width(Length::FillPortion(1))
+          ]
+        ]
+        .into()
       }
     }
   }

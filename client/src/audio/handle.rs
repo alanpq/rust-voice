@@ -4,7 +4,7 @@ use log::error;
 
 use crate::{source::AudioSource, Latency};
 
-use super::{AudioServiceBuilder, AudioSources, Message};
+use super::{AudioServiceBuilder, AudioSources, Message, Statistics};
 
 pub struct AudioHandle {
   pub(super) sources: AudioSources,
@@ -16,6 +16,8 @@ pub struct AudioHandle {
   pub(super) out_config: cpal::StreamConfig,
 
   pub(super) tx: mpsc::Sender<Message>,
+
+  pub stats: Arc<Statistics>,
 }
 
 impl AudioHandle {

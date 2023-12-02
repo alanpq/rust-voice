@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use cpal::traits::DeviceTrait as _;
 use futures::executor::block_on;
 use log::error;
+
+use super::Statistics;
 
 pub(super) fn error(err: cpal::StreamError) {
   error!("{}", err);
@@ -10,10 +14,13 @@ pub(super) fn make_input_stream(
   device: cpal::Device,
   config: cpal::StreamConfig,
   mut mic_tx: futures::channel::mpsc::Sender<f32>,
+  stats: Arc<Statistics>,
 ) -> Result<cpal::Stream, cpal::BuildStreamError> {
   let data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
     for sample in data.iter().step_by(config.channels as usize) {
-      let _ = mic_tx.try_send(*sample); // TODO: add stats here
+      if mic_tx.try_send(*sample).is_err() {
+        stats.dropped_mic_samples.inc();
+      }
     }
   };
   device.build_input_stream(&config, data_fn, error, None)
@@ -23,6 +30,7 @@ pub(super) fn make_output_stream(
   device: cpal::Device,
   config: cpal::StreamConfig,
   sources: super::AudioSources,
+  stats: Arc<Statistics>,
 ) -> Result<cpal::Stream, cpal::BuildStreamError> {
   let data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
     {
@@ -48,6 +56,7 @@ pub(super) fn make_output_stream(
           data[i * channels + j] = sample;
         }
       }
+      stats.pushed_output_samples.add(data.len());
     }
   };
   device.build_output_stream(&config, data_fn, error, None)

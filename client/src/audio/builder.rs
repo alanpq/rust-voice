@@ -5,7 +5,7 @@ use cpal::traits::{DeviceTrait as _, HostTrait as _};
 use log::{debug, info};
 
 use crate::{
-  audio::{streams, AudioService},
+  audio::{streams, AudioService, Statistics},
   opus::OPUS_SAMPLE_RATES,
   source::{AudioMpsc, AudioSource},
   Latency,
@@ -136,16 +136,20 @@ impl AudioServiceBuilder {
 
     let mic = AudioMpsc::new(mic_rx, in_config.sample_rate.0);
 
+    let stats = Arc::new(Statistics::new());
+
     let (tx, rx) = mpsc::channel();
 
     {
       let sources = sources.clone();
       let in_config = in_config.clone();
       let out_config = out_config.clone();
+      let stats = stats.clone();
       std::thread::spawn(move || {
-        let input_stream = streams::make_input_stream(input_device, in_config, mic_tx).unwrap();
+        let input_stream =
+          streams::make_input_stream(input_device, in_config, mic_tx, stats.clone()).unwrap();
         let output_stream =
-          streams::make_output_stream(output_device, out_config, sources).unwrap();
+          streams::make_output_stream(output_device, out_config, sources, stats).unwrap();
         let service = AudioService {
           input_stream,
           output_stream,
@@ -163,6 +167,7 @@ impl AudioServiceBuilder {
         in_latency,
         in_config,
         tx,
+        stats,
       },
       mic,
     ))

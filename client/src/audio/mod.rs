@@ -1,16 +1,15 @@
-mod handle;
-use std::sync::{Arc, Mutex};
-
-pub use handle::*;
-
-mod service;
-pub use service::*;
-
 mod builder;
-pub use builder::*;
-
+mod handle;
+mod service;
+mod stats;
 mod streams;
 
+pub use builder::*;
+pub use handle::*;
+pub use service::*;
+pub use stats::*;
+
 use crate::source::AudioSource;
+use std::sync::{Arc, Mutex};
 
 pub type AudioSources = Arc<Mutex<Vec<Arc<dyn AudioSource>>>>;
