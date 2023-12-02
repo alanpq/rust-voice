@@ -62,19 +62,29 @@ impl Default for Inner {
   }
 }
 
+#[derive(Default)]
 struct App {
   log: LogPipe,
   #[allow(dead_code)]
-  logger: LoggerHandle,
+  logger: Option<LoggerHandle>,
   inner: Inner,
 
   address: String,
   username: String,
 
   connection: Option<Connection>,
+
+  last_clock: Option<std::time::Instant>,
+  client_stats: Option<Arc<client::Statistics>>,
+  last_client_stats: Option<client::Statistics<usize>>,
+  out_bytes_avg: Average<32, f32>,
+  in_bytes_avg: Average<32, f32>,
+  out_pak_avg: Average<32, f32>,
+  in_pak_avg: Average<32, f32>,
+
   audio_stats: Option<Arc<Statistics>>,
   last_pushed_samples: Option<(usize, std::time::Instant)>,
-  out_samples_per_sec: Average<20, f32>,
+  out_samples_per_sec: Average<32, f32>,
 }
 
 #[derive(Default)]
@@ -104,15 +114,16 @@ impl Application for App {
     (
       Self {
         log: flags.log,
-        logger: flags.logger.unwrap(),
+        logger: flags.logger,
         inner: Inner::default(),
         connection: None,
+        client_stats: None,
         audio_stats: None,
         last_pushed_samples: None,
-        out_samples_per_sec: Default::default(),
 
         address: std::env::var("ADDRESS").unwrap_or_else(|_| "gs.alanp.me".to_string()),
         username: std::env::var("USER").unwrap_or_default(),
+        ..Default::default()
       },
       Command::batch(vec![
         font::load(include_bytes!("../fonts/Cabin-Regular.ttf").as_slice()),
@@ -143,12 +154,32 @@ impl Application for App {
         self.audio_stats = Some(stats.clone());
       }
       Message::Clock(now) => {
-        if let Some(stats) = &self.audio_stats {
-          let now = (stats.pushed_output_samples(), *now);
-          if let Some(then) = self.last_pushed_samples.replace(now) {
-            self
-              .out_samples_per_sec
-              .push((now.0 - then.0) as f32 / (now.1.duration_since(then.1).as_secs_f32()));
+        if let Some(last_clock) = self.last_clock.replace(*now) {
+          if let Some(stats) = &self.audio_stats {
+            let now = (stats.pushed_output_samples(), *now);
+            if let Some(then) = self.last_pushed_samples.replace(now) {
+              self
+                .out_samples_per_sec
+                .push((now.0 - then.0) as f32 / (now.1.duration_since(then.1).as_secs_f32()));
+            }
+          }
+          if let Some(stats) = &self.client_stats {
+            let stats = stats.get();
+            if let Some(last) = self.last_client_stats.replace(stats) {
+              let secs = now.duration_since(last_clock).as_secs_f32();
+              self
+                .in_pak_avg
+                .push((stats.packets_received - last.packets_received) as f32 / secs);
+              self
+                .out_pak_avg
+                .push((stats.packets_sent - last.packets_sent) as f32 / secs);
+              self
+                .in_bytes_avg
+                .push((stats.bytes_received - last.bytes_received) as f32 / secs);
+              self
+                .out_bytes_avg
+                .push((stats.bytes_sent - last.bytes_sent) as f32 / secs);
+            }
           }
         }
       }
@@ -193,15 +224,20 @@ impl Application for App {
         _ => {}
       },
       Inner::Connecting => match message {
-        Message::Client(conn::Event::Connected) => self.inner = Inner::Connected {},
+        Message::Client(conn::Event::Connected(stats)) => {
+          self.client_stats = Some(stats);
+          self.inner = Inner::Connected {};
+        }
         Message::Disconnect => {
           self.inner = Inner::default();
+          self.client_stats = None;
         }
         _ => (),
       },
       Inner::Connected {} => match message {
         Message::Client(c) => match c {
-          conn::Event::Connected => {
+          conn::Event::Connected(stats) => {
+            self.client_stats = Some(stats);
             info!("Connected!");
             return scrollable::snap_to(SCROLLABLE_ID.clone(), scrollable::RelativeOffset::END);
           }
@@ -262,18 +298,39 @@ impl Application for App {
         let logs = scrollable(logs).id(SCROLLABLE_ID.clone());
         let btn = button("Disconnect").on_press(Message::Disconnect);
 
-        let sidebar = match &self.audio_stats {
-          Some(stats) => scrollable(column![
+        let sidebar = match self.audio_stats.as_ref().zip(self.client_stats.as_ref()) {
+          Some((audio, client)) => scrollable(column![
             text("Input:").font(FONT_MONO),
             text(format!(
               "  Dropped samples: {}",
-              stats.dropped_mic_samples()
+              audio.dropped_mic_samples()
             ))
             .font(FONT_MONO),
             text("Output:").font(FONT_MONO),
             text(format!(
               "  Samples/sec: {:.3}",
               self.out_samples_per_sec.avg::<f32>()
+            ))
+            .font(FONT_MONO),
+            text("Client:").font(FONT_MONO),
+            text(format!(
+              "   In bytes/sec: {:.3}",
+              self.in_bytes_avg.avg::<f32>()
+            ))
+            .font(FONT_MONO),
+            text(format!(
+              "  Out bytes/sec: {:.3}",
+              self.out_bytes_avg.avg::<f32>()
+            ))
+            .font(FONT_MONO),
+            text(format!(
+              "   In packets/sec: {:.3}",
+              self.in_pak_avg.avg::<f32>()
+            ))
+            .font(FONT_MONO),
+            text(format!(
+              "  Out packets/sec: {:.3}",
+              self.out_pak_avg.avg::<f32>()
             ))
             .font(FONT_MONO),
           ]),

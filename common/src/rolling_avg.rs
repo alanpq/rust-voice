@@ -24,6 +24,13 @@ where
     self.idx = (self.idx + 1) % N;
     self.max_idx = (self.max_idx + 1).min(N);
   }
+
+  pub fn last(&self) -> Option<S> {
+    if self.max_idx == 0 {
+      return None;
+    }
+    Some(self.samples[self.idx])
+  }
 }
 
 impl<const N: usize, S: Default + Copy> Average<N, S> {

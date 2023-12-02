@@ -26,7 +26,7 @@ pub type Connection = mpsc::Sender<Input>;
 pub enum Event {
   Ready(Connection),
   AudioStart(Arc<Statistics>),
-  Connected,
+  Connected(Arc<super::client::Statistics>),
   Joined(UserInfo),
   Left(UserInfo),
 }
@@ -82,7 +82,7 @@ impl State {
           // info!("Connecting to {:?}...", socket.peer_addr().unwrap());
 
           info!("Connected!");
-          let _ = output.send(Event::Connected).await;
+          let _ = output.send(Event::Connected(client.stats.clone())).await;
           *self = State::Connected {
             audio,
             mixer,
